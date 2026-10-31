@@ -79,12 +79,35 @@ export const SignatureCanvas: React.FC<SignatureCanvasProps> = ({ onSave, onClea
     setHasDrawn(true)
   }
 
+  const exportSignature = (canvas: HTMLCanvasElement) => {
+    try {
+      // Create a normalized export canvas (e.g. max width 600) to keep base64 lightweight and crisp
+      const targetWidth = Math.min(canvas.width, 600)
+      const scale = targetWidth / canvas.width
+      const targetHeight = Math.round(canvas.height * scale)
+
+      const exportCanvas = document.createElement('canvas')
+      exportCanvas.width = targetWidth
+      exportCanvas.height = targetHeight
+
+      const expCtx = exportCanvas.getContext('2d')
+      if (expCtx) {
+        expCtx.drawImage(canvas, 0, 0, targetWidth, targetHeight)
+        // Prefer image/png with transparent background for clean PDF and screen rendering
+        return exportCanvas.toDataURL('image/png')
+      }
+    } catch {
+      // Fallback to direct canvas export
+    }
+    return canvas.toDataURL('image/png')
+  }
+
   const stopDrawing = () => {
     if (!isDrawing) return
     setIsDrawing(false)
     const canvas = canvasRef.current
     if (canvas && hasDrawn) {
-      onSave(canvas.toDataURL('image/png'))
+      onSave(exportSignature(canvas))
     }
   }
 

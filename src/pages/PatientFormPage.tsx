@@ -202,9 +202,11 @@ export default function PatientFormPage() {
     } catch (err: unknown) {
       const msg = getErrorMessage(err)
       setSubmissionError(
-        msg === 'Failed to update record.'
-          ? 'Não foi possível salvar o preenchimento da ficha. Por favor, tente novamente.'
-          : msg || 'Falha ao processar envio da ficha.',
+        msg.includes('Must be no more than')
+          ? 'O tamanho dos dados da assinatura ou respostas excedeu o limite. Por favor, tente novamente.'
+          : msg === 'Failed to update record.'
+            ? 'Não foi possível salvar o preenchimento da ficha. Por favor, tente novamente.'
+            : msg || 'Falha ao processar envio da ficha.',
       )
     } finally {
       setSubmitting(false)
