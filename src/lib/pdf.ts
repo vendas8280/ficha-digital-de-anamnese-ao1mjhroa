@@ -23,11 +23,11 @@ export function printFormPDF(form: FormSubmissionRecord) {
           if (Array.isArray(val)) displayVal = val.join(', ')
 
           return `
-            <div style="margin-bottom: 12px; padding: 10px; background-color: #f8fafc; border-radius: 6px; border-left: 3px solid #db2777;">
-              <div style="font-weight: bold; font-size: 13px; color: #475569;">${formattedKey}:</div>
-              <div style="font-size: 14px; color: #0f172a; margin-top: 4px;">${displayVal || 'Não informado'}</div>
-            </div>
-          `
+        <div style="margin-bottom: 10px; padding: 8px 12px; background-color: #f8fafc; border-radius: 6px; border-left: 3px solid #db2777;">
+          <div style="font-weight: bold; font-size: 12px; color: #475569;">${formattedKey}:</div>
+          <div style="font-size: 13px; color: #0f172a; margin-top: 2px;">${displayVal || 'Não informado'}</div>
+        </div>
+      `
         })
         .join('')
     : '<p>Nenhuma resposta registrada.</p>'
@@ -199,10 +199,11 @@ ${form.accepted_term_text || 'Termo aceito pelo paciente no momento da assinatur
         <div style="display: flex; justify-content: space-between; align-items: flex-end;">
           <div>
             <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">CERTIFICADO DE ASSINATURA ELETRÔNICA</div>
-            <div><strong>Data e Hora:</strong> ${formatDateBR(form.signed_at || form.created)}</div>
+            <div><strong>Data e Hora:</strong> ${formatDateBR(form.signed_at || form.created)} (Horário de Brasília)</div>
             <div><strong>IP do Dispositivo:</strong> ${form.ip_address || 'Registrado via Cloud'}</div>
             <div style="word-break: break-all; margin-top: 4px;"><strong>Hash SHA-256 de Integridade:</strong> <br/><code style="font-family: monospace; font-size: 11px;">${form.document_hash || 'SHA256-REGISTRADO'}</code></div>
             <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Dispositivo: ${form.user_agent || 'Navegador Mobile/Web'}</div>
+            <div style="font-size: 11px; color: #065f46; margin-top: 6px; font-weight: 600;">Esta é a sua via do documento assinado. Guarde para seus registros.</div>
           </div>
           <div style="text-align: center; min-width: 240px;">
             ${
@@ -213,6 +214,9 @@ ${form.accepted_term_text || 'Termo aceito pelo paciente no momento da assinatur
             <div style="font-size: 11px; margin-top: 4px; font-weight: 600;">Assinatura Digital do Paciente</div>
             <div style="font-size: 10px; color: #64748b;">${form.patient_name || ''}</div>
           </div>
+        </div>
+        <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 10px; color: #64748b; text-align: center;">
+          Andresa Souza Clinic &bull; Horário de Brasília (UTC-3)
         </div>
       </div>
 

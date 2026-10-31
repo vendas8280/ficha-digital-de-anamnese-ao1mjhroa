@@ -28,6 +28,8 @@ export interface FormSubmissionRecord {
   email_delivery_error?: string
   email_sent_at?: string
   email_code_verified_at?: string
+  pdf_attached_to_email?: boolean
+  pdf_file?: string
   created: string
   updated: string
 }

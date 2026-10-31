@@ -10,76 +10,427 @@ onRecordAfterUpdateSuccess((e) => {
   const signedAt = record.getString('signed_at')
   const currentDeliveryStatus = record.getString('email_delivery_status')
 
-  // Only act when status is preenchida and signed
+  // Only act when status is preenchida, signed, and not already delivered
   if (status === 'preenchida' && patientEmail && signedAt && currentDeliveryStatus !== 'enviado') {
     let emailSuccess = false
     let deliveryError = ''
 
     try {
-      // Helper: get clinic settings inline
-      const defaults = {
-        clinic_name: 'Andresa Souza Clinic',
-        notification_email: 'gihobaicn@hotmail.com',
-        phone: '(11) 99999-8888',
-        sender_email: 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouzaclinic.com.br>',
-        technical_responsible: 'Dra. Andresa Souza',
-        professional_register: 'CRBM 12345 / Esteta',
-        clinic_cnpj: '45.123.789/0001-90',
-        clinic_address: 'Av. Paulista, 1000 - Bela Vista, São Paulo - SP, 01310-100',
+      // Inline helper: sanitize strings for standard PDF
+      const sanitizePdf = (str) => {
+        if (!str) return ''
+        return String(str)
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[\\()]/g, '')
+          .replace(/[\r\n\t]+/g, ' ')
+          .replace(/[^\x20-\x7E]/g, ' ')
+          .trim()
       }
-      let settings = defaults
-      try {
-        const list = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
-        if (list.length > 0) {
-          const s = list[0]
-          settings = {
-            clinic_name: s.getString('clinic_name') || defaults.clinic_name,
-            notification_email: s.getString('notification_email') || defaults.notification_email,
-            phone: s.getString('phone') || defaults.phone,
-            sender_email: s.getString('sender_email') || defaults.sender_email,
-            technical_responsible:
-              s.getString('technical_responsible') || defaults.technical_responsible,
-            professional_register:
-              s.getString('professional_register') || defaults.professional_register,
-            clinic_cnpj: s.getString('clinic_cnpj') || defaults.clinic_cnpj,
-            clinic_address: s.getString('clinic_address') || defaults.clinic_address,
-          }
+
+      // Inline helper: string to byte array
+      const strToBytes = (str) => {
+        const bytes = []
+        for (let i = 0; i < str.length; i++) {
+          bytes.push(str.charCodeAt(i) & 0xff)
         }
-      } catch (_) {}
+        return bytes
+      }
 
-      const clinicEmail = settings.notification_email || 'gihobaicn@hotmail.com'
+      // Inline helper: byte array to string
+      const bytesToStr = (bytes) => {
+        let result = ''
+        const chunkSize = 8192
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.slice(i, i + chunkSize)
+          result += String.fromCharCode.apply(null, chunk)
+        }
+        return result
+      }
 
-      // Helper: format Brasília date/time inline
+      // Inline helper: bytes to base64
+      const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+      const bytesToB64 = (bytes) => {
+        let result = ''
+        const len = bytes.length
+        let i = 0
+        while (i < len) {
+          const b0 = bytes[i++]
+          const b1 = i < len ? bytes[i++] : NaN
+          const b2 = i < len ? bytes[i++] : NaN
+
+          const c0 = b0 >> 2
+          const c1 = ((b0 & 3) << 4) | (isNaN(b1) ? 0 : b1 >> 4)
+          const c2 = isNaN(b1) ? 64 : ((b1 & 15) << 2) | (isNaN(b2) ? 0 : b2 >> 6)
+          const c3 = isNaN(b2) ? 64 : b2 & 63
+
+          result +=
+            B64_CHARS.charAt(c0) +
+            B64_CHARS.charAt(c1) +
+            (c2 === 64 ? '=' : B64_CHARS.charAt(c2)) +
+            (c3 === 64 ? '=' : B64_CHARS.charAt(c3))
+        }
+        return result
+      }
+
+      // Inline helper: format Brasília date/time (UTC-3)
       const formatBrDateTime = (isoDateStr) => {
         try {
           const d = isoDateStr ? new Date(isoDateStr) : new Date()
           const brMs = d.getTime() - 3 * 3600 * 1000
           const brDate = new Date(brMs)
           const pad = (n) => String(n).padStart(2, '0')
-          return `${pad(brDate.getUTCDate())}/${pad(brDate.getUTCMonth() + 1)}/${brDate.getUTCFullYear()} às ${pad(brDate.getUTCHours())}:${pad(brDate.getUTCMinutes())} (horário de Brasília)`
+          return `${pad(brDate.getUTCDate())}/${pad(brDate.getUTCMonth() + 1)}/${brDate.getUTCFullYear()} as ${pad(brDate.getUTCHours())}:${pad(brDate.getUTCMinutes())} (horario de Brasilia)`
         } catch (_) {
           return 'Data e hora registradas'
         }
       }
 
-      // Helper: build email content inline
+      // Inline helper: format date for filename (DD-MM-AAAA)
+      const formatBrDateForFilename = (isoDateStr) => {
+        try {
+          const d = isoDateStr ? new Date(isoDateStr) : new Date()
+          const brMs = d.getTime() - 3 * 3600 * 1000
+          const brDate = new Date(brMs)
+          const pad = (n) => String(n).padStart(2, '0')
+          return `${pad(brDate.getUTCDate())}-${pad(brDate.getUTCMonth() + 1)}-${brDate.getUTCFullYear()}`
+        } catch (_) {
+          return '2026-10-31'
+        }
+      }
+
+      // Inline helper: get active clinic settings without example data or CNPJ
+      const defaults = {
+        clinic_name: 'Andresa Souza Clinic',
+        notification_email: 'gihobaicn@hotmail.com',
+        phone: '',
+        sender_email: 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>',
+        technical_responsible: 'Dra. Andresa Souza',
+        professional_register: '',
+        clinic_address: '',
+      }
+      let settings = defaults
+      try {
+        const list = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
+        if (list.length > 0) {
+          const s = list[0]
+          const p = s.getString('phone')
+          const reg = s.getString('professional_register')
+          const addr = s.getString('clinic_address')
+          settings = {
+            clinic_name: s.getString('clinic_name') || defaults.clinic_name,
+            notification_email: s.getString('notification_email') || defaults.notification_email,
+            phone: p && !p.includes('99999-8888') ? p : '',
+            sender_email: s.getString('sender_email') || defaults.sender_email,
+            technical_responsible:
+              s.getString('technical_responsible') || defaults.technical_responsible,
+            professional_register: reg && !reg.includes('12345') ? reg : '',
+            clinic_address: addr && !addr.includes('Paulista') ? addr : '',
+          }
+        }
+      } catch (_) {}
+
+      const clinicEmail = settings.notification_email || 'gihobaicn@hotmail.com'
+
+      // Inline helper: generate complete PDF binary
+      const generatePdf = (rec, isPatientCopy) => {
+        const pName = rec.getString('patient_name') || 'Paciente'
+        const pCpf = rec.getString('patient_cpf') || 'Nao informado'
+        const pEmail = rec.getString('patient_email') || 'Nao informado'
+        const pPhone = rec.getString('patient_phone') || 'Nao informado'
+        const pBirth = rec.getString('patient_birth_date') || 'Nao informado'
+        const pRg = rec.getString('patient_rg') || 'Nao informado'
+        const pAddress = rec.getString('patient_address') || 'Nao informado'
+        const pProf = rec.getString('patient_profession') || 'Nao informado'
+        const pEmerg = rec.getString('patient_emergency_contact') || 'Nao informado'
+        const fType = rec.getString('form_type')
+        const sAt = rec.getString('signed_at') || rec.getString('created')
+        const dHash = rec.getString('document_hash') || 'N/A'
+        const ip = rec.getString('ip_address') || 'Nao disponivel'
+        const ua = rec.getString('user_agent') || 'Nao disponivel'
+        const tTitle =
+          rec.getString('accepted_term_title') || 'Termo de Consentimento Livre e Esclarecido'
+        const tText = rec.getString('accepted_term_text') || ''
+
+        const typeLabels = {
+          geral: 'Anamnese Estetica Geral',
+          labios: 'Labios & Micropigmentacao Labial',
+          botox: 'Toxina Botulinica (Botox)',
+        }
+        const pLabel = typeLabels[fType] || fType || 'Anamnese'
+        const brTime = formatBrDateTime(sAt)
+
+        const answersList = []
+        try {
+          const rawAnswers = rec.getString('answers')
+          if (rawAnswers) {
+            const parsed = JSON.parse(rawAnswers)
+            if (parsed && typeof parsed === 'object') {
+              for (const k of Object.keys(parsed)) {
+                let val = parsed[k]
+                if (typeof val === 'boolean') val = val ? 'Sim' : 'Nao'
+                if (Array.isArray(val)) val = val.join(', ')
+                answersList.push(`${k.replace(/_/g, ' ')}: ${val}`)
+              }
+            }
+          }
+        } catch (_) {}
+
+        const pages = []
+        let currentLines = []
+        const flush = () => {
+          if (currentLines.length > 0) {
+            pages.push(currentLines)
+            currentLines = []
+          }
+        }
+        const pushLine = (txt, isBold = false, size = 9, color = [0.1, 0.1, 0.1]) => {
+          if (currentLines.length >= 48) flush()
+          currentLines.push({ text: sanitizePdf(txt), isBold, size, color })
+        }
+        const pushDiv = () => {
+          pushLine(
+            '------------------------------------------------------------------------------------------------',
+            false,
+            8,
+            [0.7, 0.7, 0.7],
+          )
+        }
+
+        // Header
+        pushLine(
+          'ANDRESA SOUZA CLINIC - FICHA OFICIAL DE ANAMNESE E TERMO ASSINADO',
+          true,
+          11,
+          [0.51, 0.09, 0.26],
+        )
+        pushLine(
+          `Procedimento: ${pLabel} | Via: ${isPatientCopy ? 'Via do Paciente' : 'Via da Clinica (Prontuario)'}`,
+          false,
+          9,
+          [0.3, 0.3, 0.3],
+        )
+        pushDiv()
+
+        // 1. Dados Cadastrais
+        pushLine('1. DADOS CADASTRAIS DO PACIENTE', true, 10, [0.51, 0.09, 0.26])
+        pushLine(`Nome Completo: ${pName}    |    CPF: ${pCpf}`, false, 9)
+        pushLine(`E-mail: ${pEmail}    |    Telefone: ${pPhone}`, false, 9)
+        pushLine(`Nascimento: ${pBirth}    |    RG: ${pRg}`, false, 9)
+        pushLine(`Profissao: ${pProf}    |    Emergencia: ${pEmerg}`, false, 9)
+        pushLine(`Endereco Residencial: ${pAddress}`, false, 9)
+        pushDiv()
+
+        // 2. Questionário de Saúde e Anamnese (Todas as respostas)
+        pushLine(
+          '2. QUESTIONARIO DE SAUDE E ANAMNESE CLINICA (RESPOSTAS COMPLETAS)',
+          true,
+          10,
+          [0.51, 0.09, 0.26],
+        )
+        if (answersList.length === 0) {
+          pushLine('Nenhuma resposta registrada (ficha pendente).', false, 9, [0.4, 0.4, 0.4])
+        } else {
+          for (let i = 0; i < answersList.length; i++) {
+            const ans = answersList[i]
+            if (ans.length <= 88) {
+              pushLine(` * ${ans}`, false, 9)
+            } else {
+              pushLine(` * ${ans.substring(0, 85)}`, false, 9)
+              let pos = 85
+              while (pos < ans.length) {
+                pushLine(`   ${ans.substring(pos, pos + 85)}`, false, 9)
+                pos += 85
+              }
+            }
+          }
+        }
+        pushDiv()
+
+        // 3. Termo de Consentimento Aceito (Texto Integral)
+        pushLine('3. TERMO DE CONSENTIMENTO ACEITO INTEGRALMENTE', true, 10, [0.51, 0.09, 0.26])
+        pushLine(tTitle, true, 9)
+        const cleanT = sanitizePdf(tText)
+        const paras = cleanT.split(/(?:\r?\n)+/)
+        for (let pIdx = 0; pIdx < paras.length; pIdx++) {
+          const pr = paras[pIdx].trim()
+          if (!pr) continue
+          let pos = 0
+          while (pos < pr.length) {
+            pushLine(pr.substring(pos, pos + 90), false, 8.5)
+            pos += 90
+          }
+        }
+        pushDiv()
+
+        // 4. Auditoria Digital e Certificado de Assinatura Eletrônica
+        pushLine(
+          '4. REGISTRO DE AUDITORIA DIGITAL & CERTIFICADO DE ASSINATURA ELETRONICA',
+          true,
+          10,
+          [0.51, 0.09, 0.26],
+        )
+        pushLine(`Data e Hora do Aceite: ${brTime}`, false, 9)
+        pushLine(`IP de Origem Real: ${ip}`, false, 9)
+        pushLine(`Dispositivo / User-Agent: ${ua.substring(0, 80)}`, false, 8)
+        pushLine(`Hash SHA-256 de Integridade: ${dHash}`, true, 8, [0.1, 0.1, 0.1])
+        pushLine(
+          'Codigo de verificacao de integridade - garante que este documento nao foi alterado.',
+          false,
+          7.5,
+          [0.4, 0.4, 0.4],
+        )
+        pushLine(
+          `[Assinatura Eletronica Autenticada - Paciente: ${pName}]`,
+          true,
+          8.5,
+          [0.51, 0.09, 0.26],
+        )
+
+        let clinicFoot = `Clinica: ${settings.clinic_name}`
+        if (settings.technical_responsible)
+          clinicFoot += ` | Resp. Tecnica: ${settings.technical_responsible}`
+        if (settings.professional_register) clinicFoot += ` (${settings.professional_register})`
+        if (settings.phone) clinicFoot += ` | Tel: ${settings.phone}`
+        clinicFoot += ` | Fuso: Horario de Brasilia (UTC-3)`
+        pushLine(clinicFoot, false, 7.5, [0.3, 0.3, 0.3])
+        if (settings.clinic_address) {
+          pushLine(`Endereco: ${settings.clinic_address}`, false, 7.5, [0.3, 0.3, 0.3])
+        }
+
+        // Rodapé da via do paciente
+        if (isPatientCopy) {
+          pushDiv()
+          pushLine(
+            'Esta e a sua via do documento assinado. Guarde para seus registros.',
+            true,
+            8.5,
+            [0.03, 0.4, 0.25],
+          )
+        }
+
+        flush()
+        if (pages.length === 0) pages.push([])
+
+        const totalPages = pages.length
+        let nextObjId = 1
+        const catalogId = nextObjId++
+        const pagesId = nextObjId++
+        const fontNormId = nextObjId++
+        const fontBoldId = nextObjId++
+
+        const pObjIds = []
+        const cObjIds = []
+        for (let i = 0; i < totalPages; i++) {
+          pObjIds.push(nextObjId++)
+          cObjIds.push(nextObjId++)
+        }
+
+        const objects = []
+        objects.push({ id: catalogId, content: `<< /Type /Catalog /Pages ${pagesId} 0 R >>` })
+        const kids = pObjIds.map((id) => `${id} 0 R`).join(' ')
+        objects.push({
+          id: pagesId,
+          content: `<< /Type /Pages /Kids [${kids}] /Count ${totalPages} >>`,
+        })
+        objects.push({
+          id: fontNormId,
+          content: `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`,
+        })
+        objects.push({
+          id: fontBoldId,
+          content: `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>`,
+        })
+
+        for (let p = 0; p < totalPages; p++) {
+          const pLines = pages[p]
+          const curPId = pObjIds[p]
+          const curCId = cObjIds[p]
+
+          objects.push({
+            id: curPId,
+            content: `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 595 842] /Contents ${curCId} 0 R /Resources << /Font << /F1 ${fontNormId} 0 R /F2 ${fontBoldId} 0 R >> >> >>`,
+          })
+
+          let streamText = 'BT\n40 805 Td\n'
+          for (let l = 0; l < pLines.length; l++) {
+            const item = pLines[l]
+            const fRef = item.isBold ? '/F2' : '/F1'
+            const col = item.color || [0.1, 0.1, 0.1]
+            const r = col[0].toFixed(2)
+            const g = col[1].toFixed(2)
+            const b = col[2].toFixed(2)
+            const fSize = item.size || 9
+            const leading = fSize + 4
+
+            streamText += `${r} ${g} ${b} rg\n${fRef} ${fSize} Tf\n${leading} TL\n(${item.text}) Tj T*\n`
+          }
+          streamText += `0.5 0.5 0.5 rg\n/F1 7.5 Tf\n(Pagina ${p + 1} de ${totalPages}) Tj\nET\n`
+
+          const streamBytes = strToBytes(streamText)
+          objects.push({
+            id: curCId,
+            rawBytes: strToBytes(`<< /Length ${streamBytes.length} >>\nstream\n`)
+              .concat(streamBytes)
+              .concat(strToBytes('\nendstream')),
+          })
+        }
+
+        let pdf = strToBytes('%PDF-1.4\n')
+        const offsets = {}
+        objects.sort((a, b) => a.id - b.id)
+
+        for (let i = 0; i < objects.length; i++) {
+          const obj = objects[i]
+          offsets[obj.id] = pdf.length
+          pdf = pdf.concat(strToBytes(`${obj.id} 0 obj\n`))
+          if (obj.rawBytes) {
+            pdf = pdf.concat(obj.rawBytes)
+          } else {
+            pdf = pdf.concat(strToBytes(obj.content))
+          }
+          pdf = pdf.concat(strToBytes('\nendobj\n'))
+        }
+
+        const xrefOff = pdf.length
+        const pad10 = (n) => String(n).padStart(10, '0')
+        let xrefStr = `xref\n0 ${nextObjId}\n0000000000 65535 f \n`
+        for (let id = 1; id < nextObjId; id++) {
+          xrefStr += `${pad10(offsets[id] || 0)} 00000 n \n`
+        }
+        xrefStr += `trailer\n<< /Size ${nextObjId} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOff}\n%%EOF\n`
+        pdf = pdf.concat(strToBytes(xrefStr))
+
+        const cleanPatient = sanitizePdf(pName).replace(/[^a-zA-Z0-9]/g, '-')
+        const fDate = formatBrDateForFilename(sAt)
+        const filename = `Ficha-Anamnese-${cleanPatient}-${fDate}.pdf`
+
+        return {
+          bytes: pdf,
+          pdfBytes: bytesToStr(pdf),
+          base64: bytesToB64(pdf),
+          filename,
+        }
+      }
+
+      // Inline helper: build email body HTML & Text
       const buildEmail = (rec, isPatientCopy) => {
         const pName = rec.getString('patient_name') || 'Paciente'
         const pCpf = rec.getString('patient_cpf') || '-'
         const pEmail = rec.getString('patient_email') || ''
         const fType = rec.getString('form_type')
-        const sAt = rec.getString('signed_at')
+        const sAt = rec.getString('signed_at') || rec.getString('created')
         const dHash = rec.getString('document_hash') || 'N/A'
         const tTitle =
           rec.getString('accepted_term_title') || 'Termo de Consentimento Livre e Esclarecido'
-        const ip = rec.getString('ip_address') || 'Não disponível'
-        const ua = rec.getString('user_agent') || 'Não disponível'
+        const ip = rec.getString('ip_address') || 'Nao disponivel'
+        const ua = rec.getString('user_agent') || 'Nao disponivel'
         const sig = rec.getString('signature_data') || ''
 
         const typeLabels = {
           geral: 'Anamnese Geral',
-          labios: 'Lábios & Micropigmentação Labial',
-          botox: 'Toxina Botulínica (Botox)',
+          labios: 'Labios & Micropigmentacao Labial',
+          botox: 'Toxina Botulinica (Botox)',
         }
         const pLabel = typeLabels[fType] || fType || 'Anamnese'
         const brTime = formatBrDateTime(sAt)
@@ -89,7 +440,21 @@ onRecordAfterUpdateSuccess((e) => {
                <img src="${sig}" alt="Assinatura do paciente" style="max-width: 260px; max-height: 90px; border-bottom: 2px solid #831843; display: inline-block;" />
                <p style="margin: 6px 0 0 0; font-size: 12px; color: #475569; font-weight: 600;">Assinatura do paciente</p>
              </div>`
-          : `<p style="font-style: italic; color: #64748b;">[Assinatura eletrônica autenticada]</p>`
+          : `<p style="font-style: italic; color: #64748b;">[Assinatura eletronica autenticada]</p>`
+
+        let clinicFooterHtml = `<strong>${settings.clinic_name}</strong>`
+        if (settings.technical_responsible) {
+          clinicFooterHtml += ` &bull; Responsavel Tecnica: ${settings.technical_responsible}`
+          if (settings.professional_register)
+            clinicFooterHtml += ` (${settings.professional_register})`
+        }
+        if (settings.clinic_address) {
+          clinicFooterHtml += `<br/>Endereco: ${settings.clinic_address}`
+        }
+        if (settings.phone) {
+          clinicFooterHtml += ` &bull; Telefone: ${settings.phone}`
+        }
+        clinicFooterHtml += `<br/>Fuso horario: Horario de Brasilia (UTC-3)`
 
         const html = `
           <!DOCTYPE html>
@@ -102,11 +467,15 @@ onRecordAfterUpdateSuccess((e) => {
                 <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.95;">Comprovante de Ficha de Anamnese e Termo Assinado</p>
               </div>
               <div style="padding: 24px;">
-                <p style="font-size: 15px; margin-top: 0;">Olá, <strong>${pName}</strong>!</p>
+                <p style="font-size: 15px; margin-top: 0;">Ola, <strong>${pName}</strong>!</p>
                 <p style="font-size: 14px; line-height: 1.5; color: #334155;">
-                  Confirmamos a conclusão e assinatura digital da sua Ficha de Anamnese e Termo de Consentimento.
-                  ${isPatientCopy ? 'Esta é a sua via oficial do documento assinado.' : 'Esta é a notificação oficial registrada para o prontuário da clínica.'}
+                  Confirmamos a conclusao e assinatura digital da sua Ficha de Anamnese e Termo de Consentimento.
+                  ${isPatientCopy ? 'Esta e a sua via oficial do documento assinado.' : 'Esta e a notificacao oficial registrada para o prontuario da clinica.'}
                 </p>
+                <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 13px; color: #166534;">
+                  <strong>O documento completo em PDF esta anexado a esta mensagem.</strong>
+                  ${isPatientCopy ? '<br/><span style="display:inline-block; margin-top:4px; font-weight:600;">Esta e a sua via do documento assinado. Guarde para seus registros.</span>' : ''}
+                </div>
                 <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
                   <tr style="background-color: #fdf2f8; border-bottom: 1px solid #fbcfe8;">
                     <td style="padding: 10px 12px; font-weight: bold; width: 38%; color: #831843;">Tipo de Procedimento:</td>
@@ -125,7 +494,7 @@ onRecordAfterUpdateSuccess((e) => {
                     <td style="padding: 10px 12px; font-weight: 600; color: #0f172a;">${brTime}</td>
                   </tr>
                   <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Termo e Versão Aceita:</td>
+                    <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Termo e Versao Aceita:</td>
                     <td style="padding: 10px 12px;">${tTitle}</td>
                   </tr>
                   <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -148,136 +517,200 @@ onRecordAfterUpdateSuccess((e) => {
                   <p style="margin: 0; font-size: 12px; font-weight: bold; color: #0f172a;">Hash SHA-256 do Documento:</p>
                   <p style="margin: 4px 0 0 0; font-family: monospace; font-size: 11px; word-break: break-all; color: #334155;">${dHash}</p>
                   <p style="margin: 6px 0 0 0; font-size: 11px; color: #64748b; font-style: italic;">
-                    Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.
+                    Codigo de verificacao de integridade - garante que este documento nao foi alterado apos a assinatura.
                   </p>
-                </div>
-                <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 12px; margin: 18px 0; font-size: 13px; color: #065f46;">
-                  <strong>Documento em PDF Completo:</strong> A via integral em PDF contendo todas as respostas clínicas, texto integral do termo aceito e registro de auditoria no rodapé foi gerada no servidor e anexada ao prontuário.
-                  ${isPatientCopy ? '<br/><span style="display:inline-block; margin-top:4px; font-weight:600;">Esta é a sua via do documento assinado. Guarde para seus registros.</span>' : ''}
                 </div>
               </div>
               <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
-                <strong>${settings.clinic_name}</strong> &bull; Responsável Técnica: ${settings.technical_responsible} (${settings.professional_register})<br/>
-                CNPJ: ${settings.clinic_cnpj} &bull; Endereço: ${settings.clinic_address}<br/>
-                Telefone: ${settings.phone} &bull; Fuso horário: Horário de Brasília (UTC-3)
+                ${clinicFooterHtml}
               </div>
             </div>
           </body></html>
         `
 
+        let clinicFooterText = `${settings.clinic_name}`
+        if (settings.technical_responsible) {
+          clinicFooterText += ` - Responsavel Tecnica: ${settings.technical_responsible}`
+          if (settings.professional_register)
+            clinicFooterText += ` (${settings.professional_register})`
+        }
+        if (settings.clinic_address) clinicFooterText += `\nEndereco: ${settings.clinic_address}`
+        if (settings.phone) clinicFooterText += ` - Telefone: ${settings.phone}`
+        clinicFooterText += `\nFuso horario: Horario de Brasilia (UTC-3)`
+
         const text = `
 Andresa Souza Clinic - Comprovante: Ficha de Anamnese Assinada - ${pName} - ${pLabel}
 ==============================================================
 
-Olá, ${pName}!
+Ola, ${pName}!
 
 Confirmamos o preenchimento e a assinatura da sua Ficha de Anamnese.
-${isPatientCopy ? 'Esta é a sua via do documento assinado. Guarde para seus registros.' : ''}
+O documento completo em PDF esta anexado a esta mensagem.
+${isPatientCopy ? 'Esta e a sua via do documento assinado. Guarde para seus registros.' : ''}
 
 DADOS DO PROCEDIMENTO E DO PACIENTE:
 - Procedimento: ${pLabel}
 - Paciente: ${pName}
 - CPF: ${pCpf}
 - Data e Hora do Aceite: ${brTime}
-- Termo e Versão Aceita: ${tTitle}
+- Termo e Versao Aceita: ${tTitle}
 - Enviado para: ${pEmail}
 - IP de Origem REAL: ${ip}
 - Dispositivo/Navegador: ${ua}
 
-Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.
+Codigo de verificacao de integridade - garante que este documento nao foi alterado apos a assinatura.
 Hash SHA-256: ${dHash}
 
-Responsável Técnica: ${settings.technical_responsible} (${settings.professional_register})
-${settings.clinic_name} - CNPJ: ${settings.clinic_cnpj}
-Endereço: ${settings.clinic_address} - Telefone: ${settings.phone}
+${clinicFooterText}
         `.trim()
 
         return { html, text, procLabel: pLabel, patientName: pName }
       }
 
-      // Helper: send email inline
-      const sendEmail = (toAddr, subject, htmlBody, textBody) => {
+      // Inline helper: send email with attached PDF
+      const sendEmailWithPdf = (toAddr, subject, htmlBody, textBody, pdfData) => {
         const fromAddr =
           settings.sender_email ||
-          'Ficha Digital - Andresa Souza Clinic <ficha@andresasouzaclinic.com.br>'
+          'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
         let sent = false
+        let errorMsg = ''
 
         if (typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
           try {
-            const res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+            const payload = {
               from: fromAddr,
               to: [toAddr],
               subject: subject,
               html: htmlBody,
               text: textBody,
-            })
+              attachments: [
+                {
+                  filename: pdfData.filename,
+                  content: pdfData.base64,
+                  content_type: 'application/pdf',
+                },
+              ],
+            }
+
+            let res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
+
+            if (!res || !res.successful) {
+              const errDetail = res ? JSON.stringify(res.error || res.data || '') : ''
+              if (
+                errDetail.includes('403') ||
+                errDetail.includes('domain is not verified') ||
+                errDetail.includes('Forbidden')
+              ) {
+                console.log(
+                  'Resend custom domain unverified (403), falling back to onboarding@resend.dev...',
+                )
+                payload.from = 'Andresa Souza Clinic <onboarding@resend.dev>'
+                res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
+              }
+            }
+
             if (res && res.successful) {
               sent = true
+            } else {
+              errorMsg = res
+                ? JSON.stringify(res.error || res.data || 'Erro no envio Resend')
+                : 'Sem resposta do conector'
             }
-          } catch (_) {}
+          } catch (errResend) {
+            console.log('Error calling RESEND_SEND_EMAIL:', errResend)
+            errorMsg = String(errResend)
+          }
         }
 
         if (!sent) {
           try {
+            const fromName = fromAddr.includes('<')
+              ? fromAddr.split('<')[0].trim()
+              : 'Andresa Souza Clinic'
+            const fromEmail = fromAddr.includes('<')
+              ? fromAddr.split('<')[1].replace('>', '').trim()
+              : fromAddr
+
             const msg = new MailerMessage({
               from: {
-                address: fromAddr.includes('<')
-                  ? fromAddr.split('<')[1].replace('>', '').trim()
-                  : fromAddr,
-                name: fromAddr.includes('<')
-                  ? fromAddr.split('<')[0].trim()
-                  : 'Andresa Souza Clinic',
+                address: fromEmail,
+                name: fromName,
               },
               to: [{ address: toAddr }],
               subject: subject,
               html: htmlBody,
+              text: textBody,
+              attachments: [
+                {
+                  name: pdfData.filename,
+                  data: pdfData.base64,
+                  type: 'application/pdf',
+                },
+              ],
             })
             $app.newMailClient().send(msg)
             sent = true
-          } catch (errM) {
-            console.log('Mailer client error:', errM)
+          } catch (errMailer) {
+            console.log('Mailer client error with attachment:', errMailer)
+            if (!errorMsg) errorMsg = String(errMailer)
           }
         }
-        return sent
+
+        return { sent, error: errorMsg }
       }
+
+      // Generate PDFs for both copies
+      const patientPdf = generatePdf(record, true)
+      const clinicPdf = generatePdf(record, false)
 
       const patientContent = buildEmail(record, true)
       const clinicContent = buildEmail(record, false)
       const subject = `Comprovante: Ficha de Anamnese Assinada - ${patientContent.patientName} - ${patientContent.procLabel}`
 
-      // (a) Send to Patient
-      if (sendEmail(patientEmail, subject, patientContent.html, patientContent.text)) {
+      // (a) Send to Patient with patient PDF copy
+      const patientResult = sendEmailWithPdf(
+        patientEmail,
+        subject,
+        patientContent.html,
+        patientContent.text,
+        patientPdf,
+      )
+
+      if (patientResult.sent) {
         emailSuccess = true
       } else {
-        deliveryError = 'Falha ao enviar e-mail ao paciente'
+        deliveryError = `Falha ao enviar ao paciente: ${patientResult.error}`
       }
 
-      // (b) Send to Clinic
+      // (b) Send to Clinic with clinic PDF copy
       if (clinicEmail && clinicEmail.toLowerCase() !== patientEmail.toLowerCase()) {
-        sendEmail(clinicEmail, subject, clinicContent.html, clinicContent.text)
+        sendEmailWithPdf(clinicEmail, subject, clinicContent.html, clinicContent.text, clinicPdf)
       }
     } catch (errGlobal) {
       console.log('Global error in email delivery hook:', errGlobal)
       deliveryError = String(errGlobal)
     }
 
-    // Persist delivery status
+    // Persist delivery status and pdf_attached_to_email
     try {
       const nowIso = new Date().toISOString()
       const statusToSet = emailSuccess ? 'enviado' : 'falha'
+      const pdfAttached = emailSuccess ? 1 : 0
       $app
         .db()
         .newQuery(
           `UPDATE form_submissions 
            SET email_delivery_status = {:status}, 
                email_sent_at = {:sentAt}, 
-               email_delivery_error = {:error} 
+               email_delivery_error = {:error},
+               pdf_attached_to_email = {:pdfAttached}
            WHERE id = {:id}`,
         )
         .bind({
           status: statusToSet,
           sentAt: emailSuccess ? nowIso : '',
           error: deliveryError ? deliveryError.slice(0, 500) : '',
+          pdfAttached: pdfAttached,
           id: record.id,
         })
         .execute()
@@ -289,7 +722,7 @@ Endereço: ${settings.clinic_address} - Telefone: ${settings.phone}
 
 // 2. Custom endpoint: Get Real IP address from backend request
 routerAdd('GET', '/backend/v1/client-ip', (e) => {
-  let ip = 'Não disponível'
+  let ip = 'Nao disponivel'
   try {
     const xForwardedFor = e.request.header.get('X-Forwarded-For') || ''
     if (xForwardedFor) {
@@ -299,11 +732,11 @@ routerAdd('GET', '/backend/v1/client-ip', (e) => {
         if (candidate && candidate !== '127.0.0.1' && candidate !== '::1') ip = candidate
       }
     }
-    if (ip === 'Não disponível') {
+    if (ip === 'Nao disponivel') {
       const realIp = e.request.header.get('X-Real-IP') || ''
       if (realIp && realIp !== '127.0.0.1' && realIp !== '::1') ip = realIp.trim()
     }
-    if (ip === 'Não disponível') {
+    if (ip === 'Nao disponivel') {
       const cfIp = e.request.header.get('CF-Connecting-IP') || ''
       if (cfIp) ip = cfIp.trim()
     }
@@ -319,13 +752,13 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
   const patientName = (info.body.patient_name || 'Paciente').trim()
 
   if (!token || !email) {
-    return e.json(400, { error: 'Token da ficha e e-mail são obrigatórios' })
+    return e.json(400, { error: 'Token da ficha e e-mail sao obrigatorios' })
   }
 
   try {
     const records = $app.findRecordsByFilter('form_submissions', `token = "${token}"`, '', 1, 0)
     if (records.length === 0) {
-      return e.json(404, { error: 'Ficha não encontrada' })
+      return e.json(404, { error: 'Ficha nao encontrada' })
     }
     const formRecord = records[0]
 
@@ -344,7 +777,7 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
     $app.save(verifRec)
 
     // Build email
-    let sender = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouzaclinic.com.br>'
+    let sender = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
     try {
       const list = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
       if (list.length > 0 && list[0].getString('sender_email')) {
@@ -356,34 +789,43 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
       <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
         <div style="background-color: #831843; color: white; padding: 16px; text-align: center; border-radius: 6px 6px 0 0;">
           <h2 style="margin: 0; font-size: 18px;">Andresa Souza Clinic</h2>
-          <p style="margin: 4px 0 0 0; font-size: 13px;">Código de Verificação de E-mail</p>
+          <p style="margin: 4px 0 0 0; font-size: 13px;">Codigo de Verificacao de E-mail</p>
         </div>
         <div style="padding: 20px; text-align: center;">
-          <p style="font-size: 14px; text-align: left;">Olá, <strong>${patientName}</strong>!</p>
+          <p style="font-size: 14px; text-align: left;">Ola, <strong>${patientName}</strong>!</p>
           <p style="font-size: 13px; color: #475569; text-align: left;">
-            Para validar seu e-mail e receber com segurança o comprovante oficial da sua ficha de anamnese, digite o código abaixo:
+            Para validar seu e-mail e receber com seguranca o comprovante oficial da sua ficha de anamnese, digite o codigo abaixo:
           </p>
           <div style="background-color: #fdf2f8; border: 2px dashed #db2777; border-radius: 8px; padding: 16px; margin: 20px 0; display: inline-block;">
             <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #831843; font-family: monospace;">${code}</span>
           </div>
           <p style="font-size: 12px; color: #64748b;">
-            Este código é válido por 15 minutos. Se você não solicitou, por favor desconsidere.
+            Este codigo e valido por 15 minutos. Se voce nao solicitou, por favor desconsidere.
           </p>
         </div>
       </div>
     `
-    const text = `Seu código de validação da Ficha de Anamnese da Andresa Souza Clinic é: ${code}\nVálido por 15 minutos.`
+    const text = `Seu codigo de validacao da Ficha de Anamnese da Andresa Souza Clinic e: ${code}\nValido por 15 minutos.`
 
     let sent = false
     if (typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
       try {
-        const res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+        let res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
           from: sender,
           to: [email],
-          subject: `Seu Código de Validação: ${code} - Andresa Souza Clinic`,
+          subject: `Seu Codigo de Validacao: ${code} - Andresa Souza Clinic`,
           html: html,
           text: text,
         })
+        if (!res || !res.successful) {
+          res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+            from: 'Andresa Souza Clinic <onboarding@resend.dev>',
+            to: [email],
+            subject: `Seu Codigo de Validacao: ${code} - Andresa Souza Clinic`,
+            html: html,
+            text: text,
+          })
+        }
         if (res && res.successful) sent = true
       } catch (_) {}
     }
@@ -396,8 +838,9 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
             name: sender.includes('<') ? sender.split('<')[0].trim() : 'Andresa Souza Clinic',
           },
           to: [{ address: email }],
-          subject: `Seu Código de Validação: ${code} - Andresa Souza Clinic`,
+          subject: `Seu Codigo de Validacao: ${code} - Andresa Souza Clinic`,
           html: html,
+          text: text,
         })
         $app.newMailClient().send(msg)
       } catch (errM) {
@@ -407,11 +850,11 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
 
     return e.json(200, {
       success: true,
-      message: 'Código de verificação enviado para o e-mail informado',
+      message: 'Codigo de verificacao enviado para o e-mail informado',
     })
   } catch (err) {
     console.log('Error in send-verification-code:', err)
-    return e.json(500, { error: 'Erro ao gerar e enviar código: ' + String(err) })
+    return e.json(500, { error: 'Erro ao gerar e enviar codigo: ' + String(err) })
   }
 })
 
@@ -423,17 +866,16 @@ routerAdd('POST', '/backend/v1/forms/verify-email-code', (e) => {
   const code = (info.body.code || '').trim()
 
   if (!token || !email || !code) {
-    return e.json(400, { error: 'Token, e-mail e código são obrigatórios' })
+    return e.json(400, { error: 'Token, e-mail e codigo sao obrigatorios' })
   }
 
   try {
     const records = $app.findRecordsByFilter('form_submissions', `token = "${token}"`, '', 1, 0)
     if (records.length === 0) {
-      return e.json(404, { error: 'Ficha não encontrada' })
+      return e.json(404, { error: 'Ficha nao encontrada' })
     }
     const formRecord = records[0]
 
-    // Find verification code
     const verifs = $app.findRecordsByFilter(
       'email_verifications',
       `form_submission = "${formRecord.id}" && email = "${email}" && code = "${code}" && verified = false`,
@@ -443,22 +885,20 @@ routerAdd('POST', '/backend/v1/forms/verify-email-code', (e) => {
     )
 
     if (verifs.length === 0) {
-      return e.json(400, { error: 'Código de verificação inválido ou expirado' })
+      return e.json(400, { error: 'Codigo de verificacao invalido ou expirado' })
     }
 
     const verif = verifs[0]
     const expiresAt = new Date(verif.getString('expires_at'))
     if (expiresAt < new Date()) {
-      return e.json(400, { error: 'O código informado expirou. Solicite um novo código.' })
+      return e.json(400, { error: 'O codigo informado expirou. Solicite um novo codigo.' })
     }
 
-    // Mark verification as verified
     const nowIso = new Date().toISOString()
     verif.set('verified', true)
     verif.set('verified_at', nowIso)
     $app.save(verif)
 
-    // Update form submission record: status becomes 'codigo_validado' (if still pendente)
     if (formRecord.getString('status') === 'pendente') {
       formRecord.set('status', 'codigo_validado')
     }
@@ -468,7 +908,7 @@ routerAdd('POST', '/backend/v1/forms/verify-email-code', (e) => {
 
     // Register audit event inline
     try {
-      let clientIp = 'Não disponível'
+      let clientIp = 'Nao disponivel'
       const xForwardedFor = e.request.header.get('X-Forwarded-For') || ''
       if (xForwardedFor) {
         const parts = xForwardedFor.split(',')
@@ -479,17 +919,17 @@ routerAdd('POST', '/backend/v1/forms/verify-email-code', (e) => {
       const auditRec = new Record(auditCol)
       auditRec.set('form_submission', formRecord.id)
       auditRec.set('event_type', 'codigo_validado')
-      auditRec.set('description', `Código de e-mail (${code}) validado com sucesso para ${email}`)
+      auditRec.set('description', `Codigo de e-mail (${code}) validado com sucesso para ${email}`)
       auditRec.set('ip_address', clientIp)
       auditRec.set('user_agent', e.request.header.get('User-Agent') || '')
       auditRec.set('timestamp', nowIso)
       $app.save(auditRec)
     } catch (_) {}
 
-    return e.json(200, { success: true, message: 'Código validado com sucesso!' })
+    return e.json(200, { success: true, message: 'Codigo validado com sucesso!' })
   } catch (err) {
     console.log('Error verifying email code:', err)
-    return e.json(500, { error: 'Erro ao validar código: ' + String(err) })
+    return e.json(500, { error: 'Erro ao validar codigo: ' + String(err) })
   }
 })
 
@@ -503,17 +943,17 @@ routerAdd('POST', '/backend/v1/forms/audit-event', (e) => {
   const metadata = info.body.metadata || {}
 
   if (!token || !eventType) {
-    return e.json(400, { error: 'Token e event_type são obrigatórios' })
+    return e.json(400, { error: 'Token e event_type sao obrigatorios' })
   }
 
   try {
     const records = $app.findRecordsByFilter('form_submissions', `token = "${token}"`, '', 1, 0)
     if (records.length === 0) {
-      return e.json(404, { error: 'Ficha não encontrada' })
+      return e.json(404, { error: 'Ficha nao encontrada' })
     }
     const formRecord = records[0]
 
-    let clientIp = 'Não disponível'
+    let clientIp = 'Nao disponivel'
     try {
       const xForwardedFor = e.request.header.get('X-Forwarded-For') || ''
       if (xForwardedFor) {
@@ -551,31 +991,112 @@ routerAdd('GET', '/backend/v1/forms/{id}/pdf', (e) => {
     const record = $app.findRecordById('form_submissions', id)
     const isPatientCopy = via === 'paciente'
 
-    const patientName = record.getString('patient_name') || 'Paciente'
-    const patientCpf = record.getString('patient_cpf') || 'Não informado'
-    const patientEmail = record.getString('patient_email') || 'Não informado'
-    const patientPhone = record.getString('patient_phone') || 'Não informado'
-    const patientBirth = record.getString('patient_birth_date') || 'Não informado'
-    const patientRg = record.getString('patient_rg') || 'Não informado'
-    const patientAddress = record.getString('patient_address') || 'Não informado'
-    const patientProf = record.getString('patient_profession') || 'Não informado'
-    const patientEmerg = record.getString('patient_emergency_contact') || 'Não informado'
-    const formType = record.getString('form_type')
-    const signedAt = record.getString('signed_at')
-    const docHash = record.getString('document_hash') || 'N/A'
-    const ipAddress = record.getString('ip_address') || 'Não disponível'
-    const userAgent = record.getString('user_agent') || 'Não disponível'
-    const termTitle = record.getString('accepted_term_title') || 'Termo de Consentimento'
-    const termText = record.getString('accepted_term_text') || ''
+    // Inline PDF generator
+    const sanitizePdf = (str) => {
+      if (!str) return ''
+      return String(str)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[\\()]/g, '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/[^\x20-\x7E]/g, ' ')
+        .trim()
+    }
+
+    const strToBytes = (str) => {
+      const bytes = []
+      for (let i = 0; i < str.length; i++) {
+        bytes.push(str.charCodeAt(i) & 0xff)
+      }
+      return bytes
+    }
+
+    const bytesToStr = (bytes) => {
+      let result = ''
+      const chunkSize = 8192
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.slice(i, i + chunkSize)
+        result += String.fromCharCode.apply(null, chunk)
+      }
+      return result
+    }
+
+    const formatBrDateTime = (isoDateStr) => {
+      try {
+        const d = isoDateStr ? new Date(isoDateStr) : new Date()
+        const brMs = d.getTime() - 3 * 3600 * 1000
+        const brDate = new Date(brMs)
+        const pad = (n) => String(n).padStart(2, '0')
+        return `${pad(brDate.getUTCDate())}/${pad(brDate.getUTCMonth() + 1)}/${brDate.getUTCFullYear()} as ${pad(brDate.getUTCHours())}:${pad(brDate.getUTCMinutes())} (horario de Brasilia)`
+      } catch (_) {
+        return 'Data e hora registradas'
+      }
+    }
+
+    const formatBrDateForFilename = (isoDateStr) => {
+      try {
+        const d = isoDateStr ? new Date(isoDateStr) : new Date()
+        const brMs = d.getTime() - 3 * 3600 * 1000
+        const brDate = new Date(brMs)
+        const pad = (n) => String(n).padStart(2, '0')
+        return `${pad(brDate.getUTCDate())}-${pad(brDate.getUTCMonth() + 1)}-${brDate.getUTCFullYear()}`
+      } catch (_) {
+        return '2026-10-31'
+      }
+    }
+
+    let settings = {
+      clinic_name: 'Andresa Souza Clinic',
+      technical_responsible: 'Dra. Andresa Souza',
+      professional_register: '',
+      phone: '',
+      clinic_address: '',
+    }
+    try {
+      const list = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
+      if (list.length > 0) {
+        const s = list[0]
+        const p = s.getString('phone')
+        const reg = s.getString('professional_register')
+        const addr = s.getString('clinic_address')
+        settings = {
+          clinic_name: s.getString('clinic_name') || settings.clinic_name,
+          technical_responsible:
+            s.getString('technical_responsible') || settings.technical_responsible,
+          professional_register: reg && !reg.includes('12345') ? reg : '',
+          phone: p && !p.includes('99999-8888') ? p : '',
+          clinic_address: addr && !addr.includes('Paulista') ? addr : '',
+        }
+      }
+    } catch (_) {}
+
+    const pName = record.getString('patient_name') || 'Paciente'
+    const pCpf = record.getString('patient_cpf') || 'Nao informado'
+    const pEmail = record.getString('patient_email') || 'Nao informado'
+    const pPhone = record.getString('patient_phone') || 'Nao informado'
+    const pBirth = record.getString('patient_birth_date') || 'Nao informado'
+    const pRg = record.getString('patient_rg') || 'Nao informado'
+    const pAddress = record.getString('patient_address') || 'Nao informado'
+    const pProf = record.getString('patient_profession') || 'Nao informado'
+    const pEmerg = record.getString('patient_emergency_contact') || 'Nao informado'
+    const fType = record.getString('form_type')
+    const sAt = record.getString('signed_at') || record.getString('created')
+    const dHash = record.getString('document_hash') || 'N/A'
+    const ip = record.getString('ip_address') || 'Nao disponivel'
+    const ua = record.getString('user_agent') || 'Nao disponivel'
+    const tTitle =
+      record.getString('accepted_term_title') || 'Termo de Consentimento Livre e Esclarecido'
+    const tText = record.getString('accepted_term_text') || ''
 
     const typeLabels = {
       geral: 'Anamnese Estetica Geral',
-      labios: 'Labios e Micropigmentacao Labial',
+      labios: 'Labios & Micropigmentacao Labial',
       botox: 'Toxina Botulinica (Botox)',
     }
-    const procLabel = typeLabels[formType] || formType || 'Anamnese'
+    const pLabel = typeLabels[fType] || fType || 'Anamnese'
+    const brTime = formatBrDateTime(sAt)
 
-    let answersList = []
+    const answersList = []
     try {
       const rawAnswers = record.getString('answers')
       if (rawAnswers) {
@@ -591,100 +1112,235 @@ routerAdd('GET', '/backend/v1/forms/{id}/pdf', (e) => {
       }
     } catch (_) {}
 
-    const sanitize = (str) => {
-      if (!str) return ''
-      return String(str)
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[\\()]/g, '')
-        .replace(/[\r\n]+/g, ' ')
-        .replace(/[^\x20-\x7E]/g, ' ')
+    const pages = []
+    let currentLines = []
+    const flush = () => {
+      if (currentLines.length > 0) {
+        pages.push(currentLines)
+        currentLines = []
+      }
+    }
+    const pushLine = (txt, isBold = false, size = 9, color = [0.1, 0.1, 0.1]) => {
+      if (currentLines.length >= 48) flush()
+      currentLines.push({ text: sanitizePdf(txt), isBold, size, color })
+    }
+    const pushDiv = () => {
+      pushLine(
+        '------------------------------------------------------------------------------------------------',
+        false,
+        8,
+        [0.7, 0.7, 0.7],
+      )
     }
 
-    const lines = []
-    lines.push('ANDRESA SOUZA CLINIC - FICHA DIGITAL DE ANAMNESE E TERMO')
-    lines.push('Procedimento: ' + sanitize(procLabel))
-    lines.push('----------------------------------------------------------------------')
-    lines.push('1. DADOS CADASTRAIS DO PACIENTE')
-    lines.push('Nome: ' + sanitize(patientName) + ' | CPF: ' + sanitize(patientCpf))
-    lines.push('E-mail: ' + sanitize(patientEmail) + ' | Telefone: ' + sanitize(patientPhone))
-    lines.push('Nascimento: ' + sanitize(patientBirth) + ' | RG: ' + sanitize(patientRg))
-    lines.push('Profissao: ' + sanitize(patientProf) + ' | Emergencia: ' + sanitize(patientEmerg))
-    lines.push('Endereco: ' + sanitize(patientAddress))
-    lines.push('----------------------------------------------------------------------')
-    lines.push('2. QUESTIONARIO DE SAUDE E ANAMNESE')
+    pushLine(
+      'ANDRESA SOUZA CLINIC - FICHA OFICIAL DE ANAMNESE E TERMO ASSINADO',
+      true,
+      11,
+      [0.51, 0.09, 0.26],
+    )
+    pushLine(
+      `Procedimento: ${pLabel} | Via: ${isPatientCopy ? 'Via do Paciente' : 'Via da Clinica (Prontuario)'}`,
+      false,
+      9,
+      [0.3, 0.3, 0.3],
+    )
+    pushDiv()
+
+    pushLine('1. DADOS CADASTRAIS DO PACIENTE', true, 10, [0.51, 0.09, 0.26])
+    pushLine(`Nome Completo: ${pName}    |    CPF: ${pCpf}`, false, 9)
+    pushLine(`E-mail: ${pEmail}    |    Telefone: ${pPhone}`, false, 9)
+    pushLine(`Nascimento: ${pBirth}    |    RG: ${pRg}`, false, 9)
+    pushLine(`Profissao: ${pProf}    |    Emergencia: ${pEmerg}`, false, 9)
+    pushLine(`Endereco Residencial: ${pAddress}`, false, 9)
+    pushDiv()
+
+    pushLine(
+      '2. QUESTIONARIO DE SAUDE E ANAMNESE CLINICA (RESPOSTAS COMPLETAS)',
+      true,
+      10,
+      [0.51, 0.09, 0.26],
+    )
     if (answersList.length === 0) {
-      lines.push('Nenhuma resposta registrada.')
+      pushLine('Nenhuma resposta registrada (ficha pendente).', false, 9, [0.4, 0.4, 0.4])
     } else {
-      for (let i = 0; i < answersList.length && i < 25; i++) {
-        lines.push(' * ' + sanitize(answersList[i]))
+      for (let i = 0; i < answersList.length; i++) {
+        const ans = answersList[i]
+        if (ans.length <= 88) {
+          pushLine(` * ${ans}`, false, 9)
+        } else {
+          pushLine(` * ${ans.substring(0, 85)}`, false, 9)
+          let pos = 85
+          while (pos < ans.length) {
+            pushLine(`   ${ans.substring(pos, pos + 85)}`, false, 9)
+            pos += 85
+          }
+        }
       }
     }
-    lines.push('----------------------------------------------------------------------')
-    lines.push('3. TERMO DE CONSENTIMENTO ACEITO INTEGRALMENTE')
-    lines.push(sanitize(termTitle))
-    const termClean = sanitize(termText)
-    for (let p = 0; p < termClean.length && lines.length < 52; p += 78) {
-      lines.push(termClean.substring(p, p + 78))
+    pushDiv()
+
+    pushLine('3. TERMO DE CONSENTIMENTO ACEITO INTEGRALMENTE', true, 10, [0.51, 0.09, 0.26])
+    pushLine(tTitle, true, 9)
+    const cleanT = sanitizePdf(tText)
+    const paras = cleanT.split(/(?:\r?\n)+/)
+    for (let pIdx = 0; pIdx < paras.length; pIdx++) {
+      const pr = paras[pIdx].trim()
+      if (!pr) continue
+      let pos = 0
+      while (pos < pr.length) {
+        pushLine(pr.substring(pos, pos + 90), false, 8.5)
+        pos += 90
+      }
     }
-    lines.push('----------------------------------------------------------------------')
-    lines.push('4. REGISTRO DE AUDITORIA DIGITAL E ASSINATURA ELETRONICA')
-    lines.push('Data e Hora: ' + sanitize(signedAt))
-    lines.push('IP de Origem Real: ' + sanitize(ipAddress))
-    lines.push('Dispositivo / User-Agent: ' + sanitize(userAgent.substring(0, 68)))
-    lines.push('Hash SHA-256 de Integridade: ' + sanitize(docHash))
-    lines.push('Responsavel Tecnica: Dra. Andresa Souza (CRBM 12345) | CNPJ: 45.123.789/0001-90')
+    pushDiv()
+
+    pushLine(
+      '4. REGISTRO DE AUDITORIA DIGITAL & CERTIFICADO DE ASSINATURA ELETRONICA',
+      true,
+      10,
+      [0.51, 0.09, 0.26],
+    )
+    pushLine(`Data e Hora do Aceite: ${brTime}`, false, 9)
+    pushLine(`IP de Origem Real: ${ip}`, false, 9)
+    pushLine(`Dispositivo / User-Agent: ${ua.substring(0, 80)}`, false, 8)
+    pushLine(`Hash SHA-256 de Integridade: ${dHash}`, true, 8, [0.1, 0.1, 0.1])
+    pushLine(
+      'Codigo de verificacao de integridade - garante que este documento nao foi alterado.',
+      false,
+      7.5,
+      [0.4, 0.4, 0.4],
+    )
+    pushLine(
+      `[Assinatura Eletronica Autenticada - Paciente: ${pName}]`,
+      true,
+      8.5,
+      [0.51, 0.09, 0.26],
+    )
+
+    let clinicFoot = `Clinica: ${settings.clinic_name}`
+    if (settings.technical_responsible)
+      clinicFoot += ` | Resp. Tecnica: ${settings.technical_responsible}`
+    if (settings.professional_register) clinicFoot += ` (${settings.professional_register})`
+    if (settings.phone) clinicFoot += ` | Tel: ${settings.phone}`
+    clinicFoot += ` | Fuso: Horario de Brasilia (UTC-3)`
+    pushLine(clinicFoot, false, 7.5, [0.3, 0.3, 0.3])
+    if (settings.clinic_address) {
+      pushLine(`Endereco: ${settings.clinic_address}`, false, 7.5, [0.3, 0.3, 0.3])
+    }
+
     if (isPatientCopy) {
-      lines.push('----------------------------------------------------------------------')
-      lines.push('Esta e a sua via do documento assinado. Guarde para seus registros.')
+      pushDiv()
+      pushLine(
+        'Esta e a sua via do documento assinado. Guarde para seus registros.',
+        true,
+        8.5,
+        [0.03, 0.4, 0.25],
+      )
     }
 
-    let streamContent = 'BT\n/F1 9 Tf\n12 TL\n40 800 Td\n'
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i]
-      if (
-        l.startsWith('ANDRESA') ||
-        l.startsWith('1.') ||
-        l.startsWith('2.') ||
-        l.startsWith('3.') ||
-        l.startsWith('4.')
-      ) {
-        streamContent += `/F1 10 Tf (${l}) Tj T*\n/F1 8 Tf\n`
-      } else {
-        streamContent += `(${l}) Tj T*\n`
+    flush()
+    if (pages.length === 0) pages.push([])
+
+    const totalPages = pages.length
+    let nextObjId = 1
+    const catalogId = nextObjId++
+    const pagesId = nextObjId++
+    const fontNormId = nextObjId++
+    const fontBoldId = nextObjId++
+
+    const pObjIds = []
+    const cObjIds = []
+    for (let i = 0; i < totalPages; i++) {
+      pObjIds.push(nextObjId++)
+      cObjIds.push(nextObjId++)
+    }
+
+    const objects = []
+    objects.push({ id: catalogId, content: `<< /Type /Catalog /Pages ${pagesId} 0 R >>` })
+    const kids = pObjIds.map((id) => `${id} 0 R`).join(' ')
+    objects.push({
+      id: pagesId,
+      content: `<< /Type /Pages /Kids [${kids}] /Count ${totalPages} >>`,
+    })
+    objects.push({
+      id: fontNormId,
+      content: `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`,
+    })
+    objects.push({
+      id: fontBoldId,
+      content: `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>`,
+    })
+
+    for (let p = 0; p < totalPages; p++) {
+      const pLines = pages[p]
+      const curPId = pObjIds[p]
+      const curCId = cObjIds[p]
+
+      objects.push({
+        id: curPId,
+        content: `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 595 842] /Contents ${curCId} 0 R /Resources << /Font << /F1 ${fontNormId} 0 R /F2 ${fontBoldId} 0 R >> >> >>`,
+      })
+
+      let streamText = 'BT\n40 805 Td\n'
+      for (let l = 0; l < pLines.length; l++) {
+        const item = pLines[l]
+        const fRef = item.isBold ? '/F2' : '/F1'
+        const col = item.color || [0.1, 0.1, 0.1]
+        const r = col[0].toFixed(2)
+        const g = col[1].toFixed(2)
+        const b = col[2].toFixed(2)
+        const fSize = item.size || 9
+        const leading = fSize + 4
+
+        streamText += `${r} ${g} ${b} rg\n${fRef} ${fSize} Tf\n${leading} TL\n(${item.text}) Tj T*\n`
       }
+      streamText += `0.5 0.5 0.5 rg\n/F1 7.5 Tf\n(Pagina ${p + 1} de ${totalPages}) Tj\nET\n`
+
+      const streamBytes = strToBytes(streamText)
+      objects.push({
+        id: curCId,
+        rawBytes: strToBytes(`<< /Length ${streamBytes.length} >>\nstream\n`)
+          .concat(streamBytes)
+          .concat(strToBytes('\nendstream')),
+      })
     }
-    streamContent += 'ET'
 
-    const streamLen = streamContent.length
-    const obj1 = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
-    const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'
-    const obj3 =
-      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n'
-    const obj4 = `4 0 obj\n<< /Length ${streamLen} >>\nstream\n${streamContent}\nendstream\nendobj\n`
-    const obj5 = '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n'
+    let pdf = strToBytes('%PDF-1.4\n')
+    const offsets = {}
+    objects.sort((a, b) => a.id - b.id)
 
-    const header = '%PDF-1.4\n'
-    const offset1 = header.length
-    const offset2 = offset1 + obj1.length
-    const offset3 = offset2 + obj2.length
-    const offset4 = offset3 + obj3.length
-    const offset5 = offset4 + obj4.length
-    const xrefOffset = offset5 + obj5.length
+    for (let i = 0; i < objects.length; i++) {
+      const obj = objects[i]
+      offsets[obj.id] = pdf.length
+      pdf = pdf.concat(strToBytes(`${obj.id} 0 obj\n`))
+      if (obj.rawBytes) {
+        pdf = pdf.concat(obj.rawBytes)
+      } else {
+        pdf = pdf.concat(strToBytes(obj.content))
+      }
+      pdf = pdf.concat(strToBytes('\nendobj\n'))
+    }
 
+    const xrefOff = pdf.length
     const pad10 = (n) => String(n).padStart(10, '0')
-    const xref = `xref\n0 6\n0000000000 65535 f \n${pad10(offset1)} 00000 n \n${pad10(offset2)} 00000 n \n${pad10(offset3)} 00000 n \n${pad10(offset4)} 00000 n \n${pad10(offset5)} 00000 n \n`
-    const trailer = `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`
+    let xrefStr = `xref\n0 ${nextObjId}\n0000000000 65535 f \n`
+    for (let id = 1; id < nextObjId; id++) {
+      xrefStr += `${pad10(offsets[id] || 0)} 00000 n \n`
+    }
+    xrefStr += `trailer\n<< /Size ${nextObjId} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOff}\n%%EOF\n`
+    pdf = pdf.concat(strToBytes(xrefStr))
 
-    const pdfBytes = header + obj1 + obj2 + obj3 + obj4 + obj5 + xref + trailer
+    const cleanPatient = sanitizePdf(pName).replace(/[^a-zA-Z0-9]/g, '-')
+    const fDate = formatBrDateForFilename(sAt)
+    const filename = `Ficha-Anamnese-${cleanPatient}-${fDate}.pdf`
 
     e.response.header().set('Content-Type', 'application/pdf')
-    e.response
-      .header()
-      .set('Content-Disposition', `inline; filename="Ficha_${sanitize(patientName)}_${via}.pdf"`)
-    return e.string(200, pdfBytes)
+    e.response.header().set('Content-Disposition', `inline; filename="${filename}"`)
+    return e.string(200, bytesToStr(pdf))
   } catch (err) {
-    return e.json(404, { error: 'Ficha não encontrada para emissão de PDF' })
+    console.log('Error generating PDF:', err)
+    return e.json(404, { error: 'Ficha nao encontrada para emissao de PDF' })
   }
 })
 
@@ -693,43 +1349,68 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
   const info = e.requestInfo()
   const id = info.body.id
   if (!id) {
-    return e.json(400, { error: 'ID da ficha é obrigatório' })
+    return e.json(400, { error: 'ID da ficha e obrigatorio' })
   }
 
   try {
     const record = $app.findRecordById('form_submissions', id)
     const patientEmail = record.getString('patient_email')
     if (!patientEmail) {
-      return e.json(400, { error: 'Ficha não possui e-mail de paciente preenchido' })
+      return e.json(400, { error: 'Ficha nao possui e-mail de paciente preenchido' })
     }
 
-    let clinicEmail = 'gihobaicn@hotmail.com'
-    let sender = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouzaclinic.com.br>'
-    try {
-      const list = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
-      if (list.length > 0) {
-        if (list[0].getString('notification_email'))
-          clinicEmail = list[0].getString('notification_email')
-        if (list[0].getString('sender_email')) sender = list[0].getString('sender_email')
+    const sanitizePdf = (str) => {
+      if (!str) return ''
+      return String(str)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[\\()]/g, '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/[^\x20-\x7E]/g, ' ')
+        .trim()
+    }
+
+    const strToBytes = (str) => {
+      const bytes = []
+      for (let i = 0; i < str.length; i++) {
+        bytes.push(str.charCodeAt(i) & 0xff)
       }
-    } catch (_) {}
-
-    const patientName = record.getString('patient_name') || 'Paciente'
-    const patientCpf = record.getString('patient_cpf') || '-'
-    const formType = record.getString('form_type')
-    const signedAt = record.getString('signed_at')
-    const docHash = record.getString('document_hash') || 'N/A'
-    const termTitle = record.getString('accepted_term_title') || 'Termo de Consentimento'
-    const ip = record.getString('ip_address') || 'Não disponível'
-    const ua = record.getString('user_agent') || 'Não disponível'
-    const sig = record.getString('signature_data') || ''
-
-    const typeLabels = {
-      geral: 'Anamnese Geral',
-      labios: 'Lábios & Micropigmentação Labial',
-      botox: 'Toxina Botulínica (Botox)',
+      return bytes
     }
-    const procLabel = typeLabels[formType] || formType || 'Anamnese'
+
+    const bytesToStr = (bytes) => {
+      let result = ''
+      const chunkSize = 8192
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.slice(i, i + chunkSize)
+        result += String.fromCharCode.apply(null, chunk)
+      }
+      return result
+    }
+
+    const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    const bytesToB64 = (bytes) => {
+      let result = ''
+      const len = bytes.length
+      let i = 0
+      while (i < len) {
+        const b0 = bytes[i++]
+        const b1 = i < len ? bytes[i++] : NaN
+        const b2 = i < len ? bytes[i++] : NaN
+
+        const c0 = b0 >> 2
+        const c1 = ((b0 & 3) << 4) | (isNaN(b1) ? 0 : b1 >> 4)
+        const c2 = isNaN(b1) ? 64 : ((b1 & 15) << 2) | (isNaN(b2) ? 0 : b2 >> 6)
+        const c3 = isNaN(b2) ? 64 : b2 & 63
+
+        result +=
+          B64_CHARS.charAt(c0) +
+          B64_CHARS.charAt(c1) +
+          (c2 === 64 ? '=' : B64_CHARS.charAt(c2)) +
+          (c3 === 64 ? '=' : B64_CHARS.charAt(c3))
+      }
+      return result
+    }
 
     const formatBrDateTime = (isoDateStr) => {
       try {
@@ -737,117 +1418,621 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
         const brMs = d.getTime() - 3 * 3600 * 1000
         const brDate = new Date(brMs)
         const pad = (n) => String(n).padStart(2, '0')
-        return `${pad(brDate.getUTCDate())}/${pad(brDate.getUTCMonth() + 1)}/${brDate.getUTCFullYear()} às ${pad(brDate.getUTCHours())}:${pad(brDate.getUTCMinutes())} (horário de Brasília)`
+        return `${pad(brDate.getUTCDate())}/${pad(brDate.getUTCMonth() + 1)}/${brDate.getUTCFullYear()} as ${pad(brDate.getUTCHours())}:${pad(brDate.getUTCMinutes())} (horario de Brasilia)`
       } catch (_) {
         return 'Data e hora registradas'
       }
     }
-    const brTime = formatBrDateTime(signedAt)
 
-    const subject = `Comprovante: Ficha de Anamnese Assinada - ${patientName} - ${procLabel}`
+    const formatBrDateForFilename = (isoDateStr) => {
+      try {
+        const d = isoDateStr ? new Date(isoDateStr) : new Date()
+        const brMs = d.getTime() - 3 * 3600 * 1000
+        const brDate = new Date(brMs)
+        const pad = (n) => String(n).padStart(2, '0')
+        return `${pad(brDate.getUTCDate())}-${pad(brDate.getUTCMonth() + 1)}-${brDate.getUTCFullYear()}`
+      } catch (_) {
+        return '2026-10-31'
+      }
+    }
 
-    const buildHtml = (isPatientCopy) => `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <div style="background-color: #831843; color: white; padding: 16px 20px; text-align: center; border-radius: 6px 6px 0 0;">
-          <h2 style="margin: 0; font-size: 20px;">Andresa Souza Clinic</h2>
-          <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.9;">Comprovante de Ficha de Anamnese e Termo Assinado</p>
-        </div>
-        <div style="padding: 20px;">
-          <p>Olá, <strong>${patientName}</strong>!</p>
-          <p>Reenviamos a confirmação e comprovante oficial da sua ficha de anamnese.</p>
-          <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px;">
-            <tr style="background-color: #fdf2f8;"><td style="padding: 8px; font-weight: bold; width: 40%;">Procedimento:</td><td style="padding: 8px;">${procLabel}</td></tr>
-            <tr><td style="padding: 8px; font-weight: bold;">Paciente:</td><td style="padding: 8px;">${patientName}</td></tr>
-            <tr style="background-color: #f8fafc;"><td style="padding: 8px; font-weight: bold;">CPF:</td><td style="padding: 8px;">${patientCpf}</td></tr>
-            <tr><td style="padding: 8px; font-weight: bold;">Data e Hora do Aceite:</td><td style="padding: 8px;">${brTime}</td></tr>
-            <tr style="background-color: #f8fafc;"><td style="padding: 8px; font-weight: bold;">Enviado para:</td><td style="padding: 8px;">${patientEmail}</td></tr>
-            <tr><td style="padding: 8px; font-weight: bold;">IP de Origem REAL:</td><td style="padding: 8px;">${ip}</td></tr>
-            <tr style="background-color: #f8fafc;"><td style="padding: 8px; font-weight: bold;">Dispositivo/Navegador:</td><td style="padding: 8px; font-size: 11px;">${ua}</td></tr>
-            <tr><td style="padding: 8px; font-weight: bold;">Termo Aceito:</td><td style="padding: 8px;">${termTitle}</td></tr>
-          </table>
-          ${sig ? `<div style="text-align: center; margin: 16px 0;"><img src="${sig}" alt="Assinatura" style="max-width: 240px; border-bottom: 2px solid #831843;" /><p style="margin: 4px 0; font-size: 11px;">Assinatura do paciente</p></div>` : ''}
-          <div style="background-color: #f1f5f9; padding: 10px; border-radius: 4px; font-size: 11px; margin: 16px 0;">
-            <strong>Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.</strong><br/>
-            Hash SHA-256: <code>${docHash}</code>
+    let settings = {
+      clinic_name: 'Andresa Souza Clinic',
+      notification_email: 'gihobaicn@hotmail.com',
+      phone: '',
+      sender_email: 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>',
+      technical_responsible: 'Dra. Andresa Souza',
+      professional_register: '',
+      clinic_address: '',
+    }
+    try {
+      const list = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
+      if (list.length > 0) {
+        const s = list[0]
+        const p = s.getString('phone')
+        const reg = s.getString('professional_register')
+        const addr = s.getString('clinic_address')
+        settings = {
+          clinic_name: s.getString('clinic_name') || settings.clinic_name,
+          notification_email: s.getString('notification_email') || settings.notification_email,
+          phone: p && !p.includes('99999-8888') ? p : '',
+          sender_email: s.getString('sender_email') || settings.sender_email,
+          technical_responsible:
+            s.getString('technical_responsible') || settings.technical_responsible,
+          professional_register: reg && !reg.includes('12345') ? reg : '',
+          clinic_address: addr && !addr.includes('Paulista') ? addr : '',
+        }
+      }
+    } catch (_) {}
+
+    const clinicEmail = settings.notification_email || 'gihobaicn@hotmail.com'
+
+    // Inline generator
+    const generatePdf = (rec, isPatientCopy) => {
+      const pName = rec.getString('patient_name') || 'Paciente'
+      const pCpf = rec.getString('patient_cpf') || 'Nao informado'
+      const pEmail = rec.getString('patient_email') || 'Nao informado'
+      const pPhone = rec.getString('patient_phone') || 'Nao informado'
+      const pBirth = rec.getString('patient_birth_date') || 'Nao informado'
+      const pRg = rec.getString('patient_rg') || 'Nao informado'
+      const pAddress = rec.getString('patient_address') || 'Nao informado'
+      const pProf = rec.getString('patient_profession') || 'Nao informado'
+      const pEmerg = rec.getString('patient_emergency_contact') || 'Nao informado'
+      const fType = rec.getString('form_type')
+      const sAt = rec.getString('signed_at') || rec.getString('created')
+      const dHash = rec.getString('document_hash') || 'N/A'
+      const ip = rec.getString('ip_address') || 'Nao disponivel'
+      const ua = rec.getString('user_agent') || 'Nao disponivel'
+      const tTitle =
+        rec.getString('accepted_term_title') || 'Termo de Consentimento Livre e Esclarecido'
+      const tText = rec.getString('accepted_term_text') || ''
+
+      const typeLabels = {
+        geral: 'Anamnese Estetica Geral',
+        labios: 'Labios & Micropigmentacao Labial',
+        botox: 'Toxina Botulinica (Botox)',
+      }
+      const pLabel = typeLabels[fType] || fType || 'Anamnese'
+      const brTime = formatBrDateTime(sAt)
+
+      const answersList = []
+      try {
+        const rawAnswers = rec.getString('answers')
+        if (rawAnswers) {
+          const parsed = JSON.parse(rawAnswers)
+          if (parsed && typeof parsed === 'object') {
+            for (const k of Object.keys(parsed)) {
+              let val = parsed[k]
+              if (typeof val === 'boolean') val = val ? 'Sim' : 'Nao'
+              if (Array.isArray(val)) val = val.join(', ')
+              answersList.push(`${k.replace(/_/g, ' ')}: ${val}`)
+            }
+          }
+        }
+      } catch (_) {}
+
+      const pages = []
+      let currentLines = []
+      const flush = () => {
+        if (currentLines.length > 0) {
+          pages.push(currentLines)
+          currentLines = []
+        }
+      }
+      const pushLine = (txt, isBold = false, size = 9, color = [0.1, 0.1, 0.1]) => {
+        if (currentLines.length >= 48) flush()
+        currentLines.push({ text: sanitizePdf(txt), isBold, size, color })
+      }
+      const pushDiv = () => {
+        pushLine(
+          '------------------------------------------------------------------------------------------------',
+          false,
+          8,
+          [0.7, 0.7, 0.7],
+        )
+      }
+
+      pushLine(
+        'ANDRESA SOUZA CLINIC - FICHA OFICIAL DE ANAMNESE E TERMO ASSINADO',
+        true,
+        11,
+        [0.51, 0.09, 0.26],
+      )
+      pushLine(
+        `Procedimento: ${pLabel} | Via: ${isPatientCopy ? 'Via do Paciente' : 'Via da Clinica (Prontuario)'}`,
+        false,
+        9,
+        [0.3, 0.3, 0.3],
+      )
+      pushDiv()
+
+      pushLine('1. DADOS CADASTRAIS DO PACIENTE', true, 10, [0.51, 0.09, 0.26])
+      pushLine(`Nome Completo: ${pName}    |    CPF: ${pCpf}`, false, 9)
+      pushLine(`E-mail: ${pEmail}    |    Telefone: ${pPhone}`, false, 9)
+      pushLine(`Nascimento: ${pBirth}    |    RG: ${pRg}`, false, 9)
+      pushLine(`Profissao: ${pProf}    |    Emergencia: ${pEmerg}`, false, 9)
+      pushLine(`Endereco Residencial: ${pAddress}`, false, 9)
+      pushDiv()
+
+      pushLine(
+        '2. QUESTIONARIO DE SAUDE E ANAMNESE CLINICA (RESPOSTAS COMPLETAS)',
+        true,
+        10,
+        [0.51, 0.09, 0.26],
+      )
+      if (answersList.length === 0) {
+        pushLine('Nenhuma resposta registrada (ficha pendente).', false, 9, [0.4, 0.4, 0.4])
+      } else {
+        for (let i = 0; i < answersList.length; i++) {
+          const ans = answersList[i]
+          if (ans.length <= 88) {
+            pushLine(` * ${ans}`, false, 9)
+          } else {
+            pushLine(` * ${ans.substring(0, 85)}`, false, 9)
+            let pos = 85
+            while (pos < ans.length) {
+              pushLine(`   ${ans.substring(pos, pos + 85)}`, false, 9)
+              pos += 85
+            }
+          }
+        }
+      }
+      pushDiv()
+
+      pushLine('3. TERMO DE CONSENTIMENTO ACEITO INTEGRALMENTE', true, 10, [0.51, 0.09, 0.26])
+      pushLine(tTitle, true, 9)
+      const cleanT = sanitizePdf(tText)
+      const paras = cleanT.split(/(?:\r?\n)+/)
+      for (let pIdx = 0; pIdx < paras.length; pIdx++) {
+        const pr = paras[pIdx].trim()
+        if (!pr) continue
+        let pos = 0
+        while (pos < pr.length) {
+          pushLine(pr.substring(pos, pos + 90), false, 8.5)
+          pos += 90
+        }
+      }
+      pushDiv()
+
+      pushLine(
+        '4. REGISTRO DE AUDITORIA DIGITAL & CERTIFICADO DE ASSINATURA ELETRONICA',
+        true,
+        10,
+        [0.51, 0.09, 0.26],
+      )
+      pushLine(`Data e Hora do Aceite: ${brTime}`, false, 9)
+      pushLine(`IP de Origem Real: ${ip}`, false, 9)
+      pushLine(`Dispositivo / User-Agent: ${ua.substring(0, 80)}`, false, 8)
+      pushLine(`Hash SHA-256 de Integridade: ${dHash}`, true, 8, [0.1, 0.1, 0.1])
+      pushLine(
+        'Codigo de verificacao de integridade - garante que este documento nao foi alterado.',
+        false,
+        7.5,
+        [0.4, 0.4, 0.4],
+      )
+      pushLine(
+        `[Assinatura Eletronica Autenticada - Paciente: ${pName}]`,
+        true,
+        8.5,
+        [0.51, 0.09, 0.26],
+      )
+
+      let clinicFoot = `Clinica: ${settings.clinic_name}`
+      if (settings.technical_responsible)
+        clinicFoot += ` | Resp. Tecnica: ${settings.technical_responsible}`
+      if (settings.professional_register) clinicFoot += ` (${settings.professional_register})`
+      if (settings.phone) clinicFoot += ` | Tel: ${settings.phone}`
+      clinicFoot += ` | Fuso: Horario de Brasilia (UTC-3)`
+      pushLine(clinicFoot, false, 7.5, [0.3, 0.3, 0.3])
+      if (settings.clinic_address) {
+        pushLine(`Endereco: ${settings.clinic_address}`, false, 7.5, [0.3, 0.3, 0.3])
+      }
+
+      if (isPatientCopy) {
+        pushDiv()
+        pushLine(
+          'Esta e a sua via do documento assinado. Guarde para seus registros.',
+          true,
+          8.5,
+          [0.03, 0.4, 0.25],
+        )
+      }
+
+      flush()
+      if (pages.length === 0) pages.push([])
+
+      const totalPages = pages.length
+      let nextObjId = 1
+      const catalogId = nextObjId++
+      const pagesId = nextObjId++
+      const fontNormId = nextObjId++
+      const fontBoldId = nextObjId++
+
+      const pObjIds = []
+      const cObjIds = []
+      for (let i = 0; i < totalPages; i++) {
+        pObjIds.push(nextObjId++)
+        cObjIds.push(nextObjId++)
+      }
+
+      const objects = []
+      objects.push({ id: catalogId, content: `<< /Type /Catalog /Pages ${pagesId} 0 R >>` })
+      const kids = pObjIds.map((id) => `${id} 0 R`).join(' ')
+      objects.push({
+        id: pagesId,
+        content: `<< /Type /Pages /Kids [${kids}] /Count ${totalPages} >>`,
+      })
+      objects.push({
+        id: fontNormId,
+        content: `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`,
+      })
+      objects.push({
+        id: fontBoldId,
+        content: `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>`,
+      })
+
+      for (let p = 0; p < totalPages; p++) {
+        const pLines = pages[p]
+        const curPId = pObjIds[p]
+        const curCId = cObjIds[p]
+
+        objects.push({
+          id: curPId,
+          content: `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 595 842] /Contents ${curCId} 0 R /Resources << /Font << /F1 ${fontNormId} 0 R /F2 ${fontBoldId} 0 R >> >> >>`,
+        })
+
+        let streamText = 'BT\n40 805 Td\n'
+        for (let l = 0; l < pLines.length; l++) {
+          const item = pLines[l]
+          const fRef = item.isBold ? '/F2' : '/F1'
+          const col = item.color || [0.1, 0.1, 0.1]
+          const r = col[0].toFixed(2)
+          const g = col[1].toFixed(2)
+          const b = col[2].toFixed(2)
+          const fSize = item.size || 9
+          const leading = fSize + 4
+
+          streamText += `${r} ${g} ${b} rg\n${fRef} ${fSize} Tf\n${leading} TL\n(${item.text}) Tj T*\n`
+        }
+        streamText += `0.5 0.5 0.5 rg\n/F1 7.5 Tf\n(Pagina ${p + 1} de ${totalPages}) Tj\nET\n`
+
+        const streamBytes = strToBytes(streamText)
+        objects.push({
+          id: curCId,
+          rawBytes: strToBytes(`<< /Length ${streamBytes.length} >>\nstream\n`)
+            .concat(streamBytes)
+            .concat(strToBytes('\nendstream')),
+        })
+      }
+
+      let pdf = strToBytes('%PDF-1.4\n')
+      const offsets = {}
+      objects.sort((a, b) => a.id - b.id)
+
+      for (let i = 0; i < objects.length; i++) {
+        const obj = objects[i]
+        offsets[obj.id] = pdf.length
+        pdf = pdf.concat(strToBytes(`${obj.id} 0 obj\n`))
+        if (obj.rawBytes) {
+          pdf = pdf.concat(obj.rawBytes)
+        } else {
+          pdf = pdf.concat(strToBytes(obj.content))
+        }
+        pdf = pdf.concat(strToBytes('\nendobj\n'))
+      }
+
+      const xrefOff = pdf.length
+      const pad10 = (n) => String(n).padStart(10, '0')
+      let xrefStr = `xref\n0 ${nextObjId}\n0000000000 65535 f \n`
+      for (let id = 1; id < nextObjId; id++) {
+        xrefStr += `${pad10(offsets[id] || 0)} 00000 n \n`
+      }
+      xrefStr += `trailer\n<< /Size ${nextObjId} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOff}\n%%EOF\n`
+      pdf = pdf.concat(strToBytes(xrefStr))
+
+      const cleanPatient = sanitizePdf(pName).replace(/[^a-zA-Z0-9]/g, '-')
+      const fDate = formatBrDateForFilename(sAt)
+      const filename = `Ficha-Anamnese-${cleanPatient}-${fDate}.pdf`
+
+      return {
+        bytes: pdf,
+        pdfBytes: bytesToStr(pdf),
+        base64: bytesToB64(pdf),
+        filename,
+      }
+    }
+
+    // Build email
+    const buildEmail = (rec, isPatientCopy) => {
+      const pName = rec.getString('patient_name') || 'Paciente'
+      const pCpf = rec.getString('patient_cpf') || '-'
+      const pEmail = rec.getString('patient_email') || ''
+      const fType = rec.getString('form_type')
+      const sAt = rec.getString('signed_at') || rec.getString('created')
+      const dHash = rec.getString('document_hash') || 'N/A'
+      const tTitle =
+        rec.getString('accepted_term_title') || 'Termo de Consentimento Livre e Esclarecido'
+      const ip = rec.getString('ip_address') || 'Nao disponivel'
+      const ua = rec.getString('user_agent') || 'Nao disponivel'
+      const sig = rec.getString('signature_data') || ''
+
+      const typeLabels = {
+        geral: 'Anamnese Geral',
+        labios: 'Labios & Micropigmentacao Labial',
+        botox: 'Toxina Botulinica (Botox)',
+      }
+      const pLabel = typeLabels[fType] || fType || 'Anamnese'
+      const brTime = formatBrDateTime(sAt)
+
+      const sigHtml = sig
+        ? `<div style="margin: 16px 0; text-align: center;">
+             <img src="${sig}" alt="Assinatura do paciente" style="max-width: 260px; max-height: 90px; border-bottom: 2px solid #831843; display: inline-block;" />
+             <p style="margin: 6px 0 0 0; font-size: 12px; color: #475569; font-weight: 600;">Assinatura do paciente</p>
+           </div>`
+        : `<p style="font-style: italic; color: #64748b;">[Assinatura eletronica autenticada]</p>`
+
+      let clinicFooterHtml = `<strong>${settings.clinic_name}</strong>`
+      if (settings.technical_responsible) {
+        clinicFooterHtml += ` &bull; Responsavel Tecnica: ${settings.technical_responsible}`
+        if (settings.professional_register)
+          clinicFooterHtml += ` (${settings.professional_register})`
+      }
+      if (settings.clinic_address) {
+        clinicFooterHtml += `<br/>Endereco: ${settings.clinic_address}`
+      }
+      if (settings.phone) {
+        clinicFooterHtml += ` &bull; Telefone: ${settings.phone}`
+      }
+      clinicFooterHtml += `<br/>Fuso horario: Horario de Brasilia (UTC-3)`
+
+      const html = `
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head><meta charset="UTF-8"><title>Comprovante: Ficha de Anamnese Assinada</title></head>
+        <body style="font-family: Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b;">
+          <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="background-color: #831843; color: #ffffff; padding: 24px; text-align: center;">
+              <h1 style="margin: 0; font-size: 22px; font-weight: bold;">Andresa Souza Clinic</h1>
+              <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.95;">Comprovante de Ficha de Anamnese e Termo Assinado</p>
+            </div>
+            <div style="padding: 24px;">
+              <p style="font-size: 15px; margin-top: 0;">Ola, <strong>${pName}</strong>!</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #334155;">
+                Reenviamos a confirmacao e comprovante oficial da sua Ficha de Anamnese e Termo de Consentimento.
+                ${isPatientCopy ? 'Esta e a sua via oficial do documento assinado.' : 'Esta e a notificacao oficial registrada para o prontuario da clinica.'}
+              </p>
+              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 13px; color: #166534;">
+                <strong>O documento completo em PDF esta anexado a esta mensagem.</strong>
+                ${isPatientCopy ? '<br/><span style="display:inline-block; margin-top:4px; font-weight:600;">Esta e a sua via do documento assinado. Guarde para seus registros.</span>' : ''}
+              </div>
+              <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
+                <tr style="background-color: #fdf2f8; border-bottom: 1px solid #fbcfe8;">
+                  <td style="padding: 10px 12px; font-weight: bold; width: 38%; color: #831843;">Tipo de Procedimento:</td>
+                  <td style="padding: 10px 12px; font-weight: bold; color: #1e293b;">${pLabel}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Nome Completo:</td>
+                  <td style="padding: 10px 12px;">${pName}</td>
+                </tr>
+                <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">CPF:</td>
+                  <td style="padding: 10px 12px;">${pCpf}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Data e Hora do Aceite:</td>
+                  <td style="padding: 10px 12px; font-weight: 600; color: #0f172a;">${brTime}</td>
+                </tr>
+                <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Termo e Versao Aceita:</td>
+                  <td style="padding: 10px 12px;">${tTitle}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Enviado para:</td>
+                  <td style="padding: 10px 12px; color: #0369a1; font-weight: 600;">${pEmail}</td>
+                </tr>
+                <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">IP de Origem REAL:</td>
+                  <td style="padding: 10px 12px; font-family: monospace;">${ip}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Dispositivo / Navegador:</td>
+                  <td style="padding: 10px 12px; font-size: 11px; color: #64748b; word-break: break-all;">${ua}</td>
+                </tr>
+              </table>
+              <div style="background-color: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; margin: 18px 0;">
+                ${sigHtml}
+              </div>
+              <div style="background-color: #f1f5f9; border-left: 4px solid #831843; padding: 12px; margin: 18px 0; border-radius: 4px;">
+                <p style="margin: 0; font-size: 12px; font-weight: bold; color: #0f172a;">Hash SHA-256 do Documento:</p>
+                <p style="margin: 4px 0 0 0; font-family: monospace; font-size: 11px; word-break: break-all; color: #334155;">${dHash}</p>
+                <p style="margin: 6px 0 0 0; font-size: 11px; color: #64748b; font-style: italic;">
+                  Codigo de verificacao de integridade - garante que este documento nao foi alterado apos a assinatura.
+                </p>
+              </div>
+            </div>
+            <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
+              ${clinicFooterHtml}
+            </div>
           </div>
-          ${isPatientCopy ? '<p style="font-weight: bold; color: #065f46;">Esta é a sua via do documento assinado. Guarde para seus registros.</p>' : ''}
-        </div>
-      </div>
-    `
+        </body></html>
+      `
+
+      let clinicFooterText = `${settings.clinic_name}`
+      if (settings.technical_responsible) {
+        clinicFooterText += ` - Responsavel Tecnica: ${settings.technical_responsible}`
+        if (settings.professional_register)
+          clinicFooterText += ` (${settings.professional_register})`
+      }
+      if (settings.clinic_address) clinicFooterText += `\nEndereco: ${settings.clinic_address}`
+      if (settings.phone) clinicFooterText += ` - Telefone: ${settings.phone}`
+      clinicFooterText += `\nFuso horario: Horario de Brasilia (UTC-3)`
+
+      const text = `
+Andresa Souza Clinic - Comprovante: Ficha de Anamnese Assinada - ${pName} - ${pLabel}
+==============================================================
+
+Ola, ${pName}!
+
+Reenviamos a confirmacao e comprovante oficial da sua Ficha de Anamnese.
+O documento completo em PDF esta anexado a esta mensagem.
+${isPatientCopy ? 'Esta e a sua via do documento assinado. Guarde para seus registros.' : ''}
+
+DADOS DO PROCEDIMENTO E DO PACIENTE:
+- Procedimento: ${pLabel}
+- Paciente: ${pName}
+- CPF: ${pCpf}
+- Data e Hora do Aceite: ${brTime}
+- Termo e Versao Aceita: ${tTitle}
+- Enviado para: ${pEmail}
+- IP de Origem REAL: ${ip}
+- Dispositivo/Navegador: ${ua}
+
+Codigo de verificacao de integridade - garante que este documento nao foi alterado apos a assinatura.
+Hash SHA-256: ${dHash}
+
+${clinicFooterText}
+      `.trim()
+
+      return { html, text, procLabel: pLabel, patientName: pName }
+    }
+
+    const sendEmailWithPdf = (toAddr, subject, htmlBody, textBody, pdfData) => {
+      const fromAddr =
+        settings.sender_email || 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
+      let sent = false
+      let errorMsg = ''
+
+      if (typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
+        try {
+          const payload = {
+            from: fromAddr,
+            to: [toAddr],
+            subject: subject,
+            html: htmlBody,
+            text: textBody,
+            attachments: [
+              {
+                filename: pdfData.filename,
+                content: pdfData.base64,
+                content_type: 'application/pdf',
+              },
+            ],
+          }
+
+          let res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
+
+          if (!res || !res.successful) {
+            const errDetail = res ? JSON.stringify(res.error || res.data || '') : ''
+            if (
+              errDetail.includes('403') ||
+              errDetail.includes('domain is not verified') ||
+              errDetail.includes('Forbidden')
+            ) {
+              console.log(
+                'Resend custom domain unverified (403), falling back to onboarding@resend.dev...',
+              )
+              payload.from = 'Andresa Souza Clinic <onboarding@resend.dev>'
+              res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
+            }
+          }
+
+          if (res && res.successful) {
+            sent = true
+          } else {
+            errorMsg = res
+              ? JSON.stringify(res.error || res.data || 'Erro no envio Resend')
+              : 'Sem resposta do conector'
+          }
+        } catch (errResend) {
+          console.log('Error calling RESEND_SEND_EMAIL:', errResend)
+          errorMsg = String(errResend)
+        }
+      }
+
+      if (!sent) {
+        try {
+          const fromName = fromAddr.includes('<')
+            ? fromAddr.split('<')[0].trim()
+            : 'Andresa Souza Clinic'
+          const fromEmail = fromAddr.includes('<')
+            ? fromAddr.split('<')[1].replace('>', '').trim()
+            : fromAddr
+
+          const msg = new MailerMessage({
+            from: {
+              address: fromEmail,
+              name: fromName,
+            },
+            to: [{ address: toAddr }],
+            subject: subject,
+            html: htmlBody,
+            text: textBody,
+            attachments: [
+              {
+                name: pdfData.filename,
+                data: pdfData.base64,
+                type: 'application/pdf',
+              },
+            ],
+          })
+          $app.newMailClient().send(msg)
+          sent = true
+        } catch (errMailer) {
+          console.log('Mailer client error with attachment:', errMailer)
+          if (!errorMsg) errorMsg = String(errMailer)
+        }
+      }
+
+      return { sent, error: errorMsg }
+    }
+
+    const patientPdf = generatePdf(record, true)
+    const clinicPdf = generatePdf(record, false)
+
+    const patientContent = buildEmail(record, true)
+    const clinicContent = buildEmail(record, false)
+    const subject = `Comprovante: Ficha de Anamnese Assinada - ${patientContent.patientName} - ${patientContent.procLabel}`
 
     let emailSent = false
     let sendErr = ''
 
-    // Re-send to patient
-    if (typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
-      try {
-        const res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-          from: sender,
-          to: [patientEmail],
-          subject: subject,
-          html: buildHtml(true),
-        })
-        if (res && res.successful) emailSent = true
-      } catch (_) {}
+    // (a) Re-send to patient
+    const patientResult = sendEmailWithPdf(
+      patientEmail,
+      subject,
+      patientContent.html,
+      patientContent.text,
+      patientPdf,
+    )
+
+    if (patientResult.sent) {
+      emailSent = true
+    } else {
+      sendErr = patientResult.error
     }
 
-    if (!emailSent) {
-      try {
-        const msg = new MailerMessage({
-          from: {
-            address: sender.includes('<') ? sender.split('<')[1].replace('>', '').trim() : sender,
-            name: sender.includes('<') ? sender.split('<')[0].trim() : 'Andresa Souza Clinic',
-          },
-          to: [{ address: patientEmail }],
-          subject: subject,
-          html: buildHtml(true),
-        })
-        $app.newMailClient().send(msg)
-        emailSent = true
-      } catch (errPatient) {
-        sendErr = String(errPatient)
-      }
-    }
-
-    // Re-send to clinic
+    // (b) Re-send to clinic
     if (clinicEmail && clinicEmail.toLowerCase() !== patientEmail.toLowerCase()) {
-      try {
-        if (typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
-          $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-            from: sender,
-            to: [clinicEmail],
-            subject: subject,
-            html: buildHtml(false),
-          })
-        } else {
-          const msgClinic = new MailerMessage({
-            from: {
-              address: sender.includes('<') ? sender.split('<')[1].replace('>', '').trim() : sender,
-              name: sender.includes('<') ? sender.split('<')[0].trim() : 'Andresa Souza Clinic',
-            },
-            to: [{ address: clinicEmail }],
-            subject: subject,
-            html: buildHtml(false),
-          })
-          $app.newMailClient().send(msgClinic)
-        }
-      } catch (_) {}
+      sendEmailWithPdf(clinicEmail, subject, clinicContent.html, clinicContent.text, clinicPdf)
     }
 
     const nowIso = new Date().toISOString()
+    const pdfAttached = emailSent ? 1 : 0
     $app
       .db()
       .newQuery(
         `UPDATE form_submissions 
          SET email_delivery_status = {:status}, 
              email_sent_at = {:sentAt}, 
-             email_delivery_error = {:error} 
+             email_delivery_error = {:error},
+             pdf_attached_to_email = {:pdfAttached}
          WHERE id = {:id}`,
       )
       .bind({
         status: emailSent ? 'enviado' : 'falha',
         sentAt: emailSent ? nowIso : '',
         error: sendErr ? sendErr.slice(0, 500) : '',
+        pdfAttached: pdfAttached,
         id: record.id,
       })
       .execute()
@@ -855,11 +2040,11 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
     if (emailSent) {
       return e.json(200, {
         success: true,
-        message: 'E-mail reenviado com sucesso em duas vias com o PDF completo!',
+        message: 'E-mail reenviado com sucesso em duas vias com o PDF completo anexado!',
       })
     } else {
       return e.json(500, {
-        error: 'Falha ao reenviar e-mail: ' + (sendErr || 'Erro no serviço de envio.'),
+        error: 'Falha ao reenviar e-mail: ' + (sendErr || 'Erro no servico de envio.'),
       })
     }
   } catch (err) {

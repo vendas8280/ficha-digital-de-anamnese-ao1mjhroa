@@ -177,7 +177,7 @@ export default function FormDetailPage() {
 
       <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
         {/* Status and Action Banners */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <Card className="border-slate-200">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
@@ -212,6 +212,31 @@ export default function FormDetailPage() {
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider">
+                  PDF Anexado ao E-mail
+                </p>
+                <div className="mt-1">
+                  {form.status === 'preenchida' ? (
+                    form.pdf_attached_to_email ? (
+                      <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-semibold">
+                        PDF anexado: Sim
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs font-semibold">
+                        PDF anexado: Não
+                      </Badge>
+                    )
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider">
                   Envio de Comprovante
                 </p>
                 <div className="mt-1 text-xs font-medium">
@@ -235,7 +260,7 @@ export default function FormDetailPage() {
                   variant="outline"
                   onClick={handleResendEmail}
                   disabled={resendingEmail}
-                  className="text-xs h-8 border-slate-300"
+                  className="text-xs h-8 border-slate-300 hover:bg-rose-50 hover:text-rose-900"
                 >
                   <RefreshCw
                     className={`w-3.5 h-3.5 mr-1 ${resendingEmail ? 'animate-spin' : ''}`}

@@ -44,6 +44,7 @@ import {
   AlertTriangle,
   Mail,
   Loader2,
+  Send,
   Trash2,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
@@ -67,6 +68,7 @@ export default function DashboardPage() {
   const [creatingLink, setCreatingLink] = useState(false)
   const [createdLinkUrl, setCreatedLinkUrl] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [resendingId, setResendingId] = useState<string | null>(null)
 
   // Redirect if not logged in
   useEffect(() => {
@@ -158,6 +160,26 @@ export default function DashboardPage() {
       } catch {
         toast({ title: 'Erro ao excluir ficha.', variant: 'destructive' })
       }
+    }
+  }
+
+  const handleResendEmail = async (id: string) => {
+    setResendingId(id)
+    try {
+      const res = await formsService.resendReceiptEmail(id)
+      toast({
+        title: 'E-mail enviado!',
+        description: res?.message || 'Comprovante com PDF anexado reenviado com sucesso.',
+      })
+      loadForms()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao reenviar e-mail',
+        description: err?.message || 'Verifique as configurações de e-mail.',
+        variant: 'destructive',
+      })
+    } finally {
+      setResendingId(null)
     }
   }
 
@@ -574,6 +596,7 @@ export default function DashboardPage() {
                     <th className="py-3 px-4">Paciente</th>
                     <th className="py-3 px-4">Procedimento</th>
                     <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">PDF no E-mail</th>
                     <th className="py-3 px-4">E-mail Comprovante</th>
                     <th className="py-3 px-4">Data do Aceite</th>
                     <th className="py-3 px-4 text-right">Ações</th>
@@ -626,17 +649,52 @@ export default function DashboardPage() {
 
                         <td className="py-3.5 px-4">
                           {item.status === 'preenchida' ? (
-                            item.email_delivery_status === 'enviado' ? (
-                              <span className="text-emerald-700 flex items-center gap-1 font-medium">
-                                <Mail className="w-3.5 h-3.5" /> Enviado
-                              </span>
-                            ) : item.email_delivery_status === 'falha' ? (
-                              <span className="text-red-700 flex items-center gap-1 font-medium">
-                                <AlertTriangle className="w-3.5 h-3.5" /> Falha no envio
-                              </span>
+                            item.pdf_attached_to_email ? (
+                              <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200 font-medium text-[10px] gap-1">
+                                <FileText className="w-3 h-3 text-emerald-600" />
+                                PDF anexado: Sim
+                              </Badge>
                             ) : (
-                              <span className="text-slate-400">Não enviado</span>
+                              <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50 border-amber-200 font-medium text-[10px] gap-1">
+                                <FileText className="w-3 h-3 text-amber-600" />
+                                PDF anexado: Não
+                              </Badge>
                             )
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          {item.status === 'preenchida' ? (
+                            <div className="flex flex-col gap-1 items-start">
+                              {item.email_delivery_status === 'enviado' ? (
+                                <span className="text-emerald-700 flex items-center gap-1 font-medium">
+                                  <Mail className="w-3.5 h-3.5" /> Enviado
+                                </span>
+                              ) : item.email_delivery_status === 'falha' ? (
+                                <span className="text-red-700 flex items-center gap-1 font-medium">
+                                  <AlertTriangle className="w-3.5 h-3.5" /> Falha no envio
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">Não enviado</span>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleResendEmail(item.id)}
+                                disabled={resendingId === item.id}
+                                className="h-6 px-2 text-[10px] border-slate-200 text-slate-700 hover:bg-rose-50 hover:text-rose-900 gap-1"
+                                title="Reenviar e-mail de comprovante com PDF anexado"
+                              >
+                                {resendingId === item.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Send className="w-3 h-3" />
+                                )}
+                                Reenviar e-mail
+                              </Button>
+                            </div>
                           ) : (
                             <span className="text-slate-400">—</span>
                           )}

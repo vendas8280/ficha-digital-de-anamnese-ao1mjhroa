@@ -34,12 +34,9 @@ export default function SettingsPage() {
     'Ficha Digital - Andresa Souza Clinic <ficha@andresasouzaclinic.com.br>',
   )
   const [technicalResponsible, setTechnicalResponsible] = useState('Dra. Andresa Souza')
-  const [professionalRegister, setProfessionalRegister] = useState('CRBM 12345 / Esteta')
-  const [clinicCnpj, setClinicCnpj] = useState('45.123.789/0001-90')
-  const [clinicAddress, setClinicAddress] = useState(
-    'Av. Paulista, 1000 - Bela Vista, São Paulo - SP, 01310-100',
-  )
-  const [phone, setPhone] = useState('(11) 99999-8888')
+  const [professionalRegister, setProfessionalRegister] = useState('')
+  const [clinicAddress, setClinicAddress] = useState('')
+  const [phone, setPhone] = useState('')
 
   // Check auth
   useEffect(() => {
@@ -60,7 +57,6 @@ export default function SettingsPage() {
           if (data.sender_email) setSenderEmail(data.sender_email)
           if (data.technical_responsible) setTechnicalResponsible(data.technical_responsible)
           if (data.professional_register) setProfessionalRegister(data.professional_register)
-          if (data.clinic_cnpj) setClinicCnpj(data.clinic_cnpj)
           if (data.clinic_address) setClinicAddress(data.clinic_address)
         }
       } catch (err) {
@@ -86,7 +82,6 @@ export default function SettingsPage() {
         sender_email: senderEmail,
         technical_responsible: technicalResponsible,
         professional_register: professionalRegister,
-        clinic_cnpj: clinicCnpj,
         clinic_address: clinicAddress,
       })
       toast({
@@ -251,38 +246,21 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="cnpj"
-                    className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
-                  >
-                    <Building className="w-3.5 h-3.5 text-slate-500" />
-                    CNPJ da Clínica
-                  </Label>
-                  <Input
-                    id="cnpj"
-                    value={clinicCnpj}
-                    onChange={(e) => setClinicCnpj(e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="phone"
-                    className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
-                  >
-                    <Phone className="w-3.5 h-3.5 text-slate-500" />
-                    Telefone / WhatsApp
-                  </Label>
-                  <Input
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="phone"
+                  className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+                >
+                  <Phone className="w-3.5 h-3.5 text-slate-500" />
+                  Telefone / WhatsApp da Clínica
+                </Label>
+                <Input
+                  id="phone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="(11) 99999-0000"
+                  className="text-sm"
+                />
               </div>
 
               <div className="space-y-1.5">
