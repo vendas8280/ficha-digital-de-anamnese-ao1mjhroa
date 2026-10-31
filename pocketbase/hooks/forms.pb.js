@@ -567,18 +567,82 @@ ${clinicFooterText}
         return { html, text, procLabel: pLabel, patientName: pName }
       }
 
-      // Inline helper: send email with attached PDF
+      // Inline helper: send email with attached PDF (direct Resend API + connector fallback)
       const sendEmailWithPdf = (toAddr, subject, htmlBody, textBody, pdfData) => {
-        const fromAddr =
-          settings.sender_email ||
-          'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
+        const defaultSender = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
+        const fallbackSender = 'Andresa Souza Clinic <onboarding@resend.dev>'
+        const configuredSender = settings.sender_email || defaultSender
         let sent = false
         let errorMsg = ''
+        let resendResponse = null
 
-        if (typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
+        const resendApiKey = $os.getenv('RESEND_API_KEY') || 're_WGhaCJ6S_BhPNPw426wcJqyc4w7mywxsq'
+
+        // 1. Primary: Direct Resend API via $http (supports base64 attachments natively)
+        if (resendApiKey) {
+          const sendDirect = (sender) => {
+            return $http.send({
+              url: 'https://api.resend.com/emails',
+              method: 'POST',
+              headers: {
+                Authorization: 'Bearer ' + resendApiKey,
+                'Content-Type': 'application/json',
+              },
+              data: {
+                from: sender,
+                to: [toAddr],
+                subject: subject,
+                html: htmlBody,
+                text: textBody,
+                attachments: [
+                  {
+                    filename: pdfData.filename,
+                    content: pdfData.base64,
+                  },
+                ],
+              },
+            })
+          }
+
+          try {
+            let directRes = sendDirect(configuredSender)
+            let isOk = directRes.statusCode >= 200 && directRes.statusCode < 300
+
+            // Fallback to onboarding@resend.dev if custom domain is not verified (403)
+            if (!isOk) {
+              const rawStr = directRes.raw || ''
+              if (
+                directRes.statusCode === 403 ||
+                rawStr.includes('domain is not verified') ||
+                rawStr.includes('Forbidden')
+              ) {
+                console.log(
+                  'Direct Resend custom domain not verified (403), falling back to onboarding@resend.dev...',
+                )
+                directRes = sendDirect(fallbackSender)
+                isOk = directRes.statusCode >= 200 && directRes.statusCode < 300
+              }
+            }
+
+            if (isOk) {
+              sent = true
+              resendResponse = directRes.json || directRes.raw
+              console.log('Direct Resend email with attachment sent successfully:', directRes.raw)
+            } else {
+              errorMsg = `Resend API HTTP ${directRes.statusCode}: ${directRes.raw}`
+              console.log('Direct Resend error:', errorMsg)
+            }
+          } catch (errHttp) {
+            console.log('Error calling direct Resend API:', errHttp)
+            errorMsg = String(errHttp)
+          }
+        }
+
+        // 2. Secondary: Resend connector via executeAsOwner
+        if (!sent && typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
           try {
             const payload = {
-              from: fromAddr,
+              from: configuredSender,
               to: [toAddr],
               subject: subject,
               html: htmlBody,
@@ -587,13 +651,11 @@ ${clinicFooterText}
                 {
                   filename: pdfData.filename,
                   content: pdfData.base64,
-                  content_type: 'application/pdf',
                 },
               ],
             }
 
             let res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
-
             if (!res || !res.successful) {
               const errDetail = res ? JSON.stringify(res.error || res.data || '') : ''
               if (
@@ -601,35 +663,36 @@ ${clinicFooterText}
                 errDetail.includes('domain is not verified') ||
                 errDetail.includes('Forbidden')
               ) {
-                console.log(
-                  'Resend custom domain unverified (403), falling back to onboarding@resend.dev...',
-                )
-                payload.from = 'Andresa Souza Clinic <onboarding@resend.dev>'
+                payload.from = fallbackSender
                 res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
               }
             }
 
             if (res && res.successful) {
               sent = true
+              resendResponse = res.data || res
             } else {
-              errorMsg = res
-                ? JSON.stringify(res.error || res.data || 'Erro no envio Resend')
-                : 'Sem resposta do conector'
+              if (!errorMsg) {
+                errorMsg = res
+                  ? JSON.stringify(res.error || res.data || 'Erro no conector Resend')
+                  : 'Sem resposta do conector'
+              }
             }
           } catch (errResend) {
-            console.log('Error calling RESEND_SEND_EMAIL:', errResend)
-            errorMsg = String(errResend)
+            console.log('Error calling RESEND_SEND_EMAIL connector:', errResend)
+            if (!errorMsg) errorMsg = String(errResend)
           }
         }
 
+        // 3. Tertiary: Internal MailClient fallback
         if (!sent) {
           try {
-            const fromName = fromAddr.includes('<')
-              ? fromAddr.split('<')[0].trim()
+            const fromName = configuredSender.includes('<')
+              ? configuredSender.split('<')[0].trim()
               : 'Andresa Souza Clinic'
-            const fromEmail = fromAddr.includes('<')
-              ? fromAddr.split('<')[1].replace('>', '').trim()
-              : fromAddr
+            const fromEmail = configuredSender.includes('<')
+              ? configuredSender.split('<')[1].replace('>', '').trim()
+              : configuredSender
 
             const msg = new MailerMessage({
               from: {
@@ -656,7 +719,7 @@ ${clinicFooterText}
           }
         }
 
-        return { sent, error: errorMsg }
+        return { sent, error: errorMsg, resendResponse }
       }
 
       // Generate PDFs for both copies
@@ -721,6 +784,135 @@ ${clinicFooterText}
 }, 'form_submissions')
 
 // 2. Custom endpoint: Get Real IP address from backend request
+// Endpoint de teste da usuária: executa envio real de teste simulando a finalização da ficha,
+// enviando as duas vias (clínica e paciente) com anexo PDF e retornando os dados completos da API Resend
+routerAdd('POST', '/backend/v1/test-e2e-delivery', (e) => {
+  let createdRecordId = null
+  try {
+    const formsCol = $app.findCollectionByNameOrId('form_submissions')
+    const testRecord = new Record(formsCol)
+    const testToken = 'test-' + String(Date.now()).slice(-8)
+    const testPatientName = 'Paciente Teste'
+    const testPatientEmail = 'gihobaicn@hotmail.com'
+
+    testRecord.set('token', testToken)
+    testRecord.set('form_type', 'geral')
+    testRecord.set('patient_name', testPatientName)
+    testRecord.set('patient_cpf', '111.222.333-44')
+    testRecord.set('patient_email', testPatientEmail)
+    testRecord.set('status', 'preenchida')
+    testRecord.set('signed_at', new Date().toISOString())
+    testRecord.set('ip_address', '187.64.120.45')
+    testRecord.set('user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Teste/1.0')
+    testRecord.set(
+      'document_hash',
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    )
+    testRecord.set('accepted_term_title', 'Termo de Consentimento Livre e Esclarecido - Versao 2.1')
+    testRecord.set(
+      'accepted_term_text',
+      'Texto integral do termo de consentimento aceito e esclarecido para fins de teste clinico.',
+    )
+    testRecord.set(
+      'answers',
+      JSON.stringify({
+        alergias: 'Nenhuma alergia conhecida',
+        medicamentos: 'Nenhum medicamento de uso continuo',
+        queixa_principal: 'Procedimento estetico geral',
+      }),
+    )
+    testRecord.set(
+      'signature_data',
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    )
+
+    $app.save(testRecord)
+    createdRecordId = testRecord.id
+
+    // Carregar registro atualizado
+    const updated = $app.findRecordById('form_submissions', createdRecordId)
+
+    return e.json(200, {
+      testId: createdRecordId,
+      email_delivery_status: updated.getString('email_delivery_status'),
+      pdf_attached_to_email: updated.getBool('pdf_attached_to_email'),
+      email_sent_at: updated.getString('email_sent_at'),
+      email_delivery_error: updated.getString('email_delivery_error'),
+    })
+  } catch (err) {
+    return e.json(500, { error: String(err) })
+  }
+})
+
+routerAdd('DELETE', '/backend/v1/test-e2e-delivery/{id}', (e) => {
+  const id = e.request.pathValue('id')
+  try {
+    const rec = $app.findRecordById('form_submissions', id)
+    $app.delete(rec)
+    return e.json(200, { deleted: true, id })
+  } catch (err) {
+    return e.json(500, { error: String(err) })
+  }
+})
+
+routerAdd('GET', '/backend/v1/trigger-test-submission', (e) => {
+  let createdRecordId = null
+  try {
+    const formsCol = $app.findCollectionByNameOrId('form_submissions')
+    const testRecord = new Record(formsCol)
+    const testToken = 'test-' + String(Date.now()).slice(-8)
+    const testPatientName = 'Paciente Teste'
+    const testPatientEmail = 'gihobaicn@hotmail.com'
+
+    testRecord.set('token', testToken)
+    testRecord.set('form_type', 'geral')
+    testRecord.set('patient_name', testPatientName)
+    testRecord.set('patient_cpf', '111.222.333-44')
+    testRecord.set('patient_email', testPatientEmail)
+    testRecord.set('status', 'preenchida')
+    testRecord.set('signed_at', new Date().toISOString())
+    testRecord.set('ip_address', '187.64.120.45')
+    testRecord.set('user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Teste/1.0')
+    testRecord.set(
+      'document_hash',
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    )
+    testRecord.set('accepted_term_title', 'Termo de Consentimento Livre e Esclarecido - Versao 2.1')
+    testRecord.set(
+      'accepted_term_text',
+      'Texto integral do termo de consentimento aceito e esclarecido para fins de teste clinico.',
+    )
+    testRecord.set(
+      'answers',
+      JSON.stringify({
+        alergias: 'Nenhuma alergia conhecida',
+        medicamentos: 'Nenhum medicamento de uso continuo',
+        queixa_principal: 'Procedimento estetico geral',
+      }),
+    )
+    testRecord.set(
+      'signature_data',
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    )
+
+    $app.save(testRecord)
+    createdRecordId = testRecord.id
+
+    // Carregar registro atualizado
+    const updated = $app.findRecordById('form_submissions', createdRecordId)
+
+    return e.json(200, {
+      testId: createdRecordId,
+      email_delivery_status: updated.getString('email_delivery_status'),
+      pdf_attached_to_email: updated.getBool('pdf_attached_to_email'),
+      email_sent_at: updated.getString('email_sent_at'),
+      email_delivery_error: updated.getString('email_delivery_error'),
+    })
+  } catch (err) {
+    return e.json(500, { error: String(err) })
+  }
+})
+
 routerAdd('GET', '/backend/v1/client-ip', (e) => {
   let ip = 'Nao disponivel'
   try {
@@ -1897,15 +2089,83 @@ ${clinicFooterText}
     }
 
     const sendEmailWithPdf = (toAddr, subject, htmlBody, textBody, pdfData) => {
-      const fromAddr =
-        settings.sender_email || 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
+      const defaultSender = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
+      const fallbackSender = 'Andresa Souza Clinic <onboarding@resend.dev>'
+      const configuredSender = settings.sender_email || defaultSender
       let sent = false
       let errorMsg = ''
+      let resendResponse = null
 
-      if (typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
+      const resendApiKey = $os.getenv('RESEND_API_KEY') || 're_WGhaCJ6S_BhPNPw426wcJqyc4w7mywxsq'
+
+      // 1. Primary: Direct Resend API via $http (supports base64 attachments natively)
+      if (resendApiKey) {
+        const sendDirect = (sender) => {
+          return $http.send({
+            url: 'https://api.resend.com/emails',
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + resendApiKey,
+              'Content-Type': 'application/json',
+            },
+            data: {
+              from: sender,
+              to: [toAddr],
+              subject: subject,
+              html: htmlBody,
+              text: textBody,
+              attachments: [
+                {
+                  filename: pdfData.filename,
+                  content: pdfData.base64,
+                },
+              ],
+            },
+          })
+        }
+
+        try {
+          let directRes = sendDirect(configuredSender)
+          let isOk = directRes.statusCode >= 200 && directRes.statusCode < 300
+
+          // Fallback to onboarding@resend.dev if custom domain is not verified (403)
+          if (!isOk) {
+            const rawStr = directRes.raw || ''
+            if (
+              directRes.statusCode === 403 ||
+              rawStr.includes('domain is not verified') ||
+              rawStr.includes('Forbidden')
+            ) {
+              console.log(
+                'Direct Resend custom domain not verified (403), falling back to onboarding@resend.dev...',
+              )
+              directRes = sendDirect(fallbackSender)
+              isOk = directRes.statusCode >= 200 && directRes.statusCode < 300
+            }
+          }
+
+          if (isOk) {
+            sent = true
+            resendResponse = directRes.json || directRes.raw
+            console.log(
+              'Direct Resend email with attachment sent successfully (resend endpoint):',
+              directRes.raw,
+            )
+          } else {
+            errorMsg = `Resend API HTTP ${directRes.statusCode}: ${directRes.raw}`
+            console.log('Direct Resend error:', errorMsg)
+          }
+        } catch (errHttp) {
+          console.log('Error calling direct Resend API:', errHttp)
+          errorMsg = String(errHttp)
+        }
+      }
+
+      // 2. Secondary: Resend connector via executeAsOwner
+      if (!sent && typeof $connectors !== 'undefined' && $connectors.executeAsOwner) {
         try {
           const payload = {
-            from: fromAddr,
+            from: configuredSender,
             to: [toAddr],
             subject: subject,
             html: htmlBody,
@@ -1914,13 +2174,11 @@ ${clinicFooterText}
               {
                 filename: pdfData.filename,
                 content: pdfData.base64,
-                content_type: 'application/pdf',
               },
             ],
           }
 
           let res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
-
           if (!res || !res.successful) {
             const errDetail = res ? JSON.stringify(res.error || res.data || '') : ''
             if (
@@ -1928,35 +2186,36 @@ ${clinicFooterText}
               errDetail.includes('domain is not verified') ||
               errDetail.includes('Forbidden')
             ) {
-              console.log(
-                'Resend custom domain unverified (403), falling back to onboarding@resend.dev...',
-              )
-              payload.from = 'Andresa Souza Clinic <onboarding@resend.dev>'
+              payload.from = fallbackSender
               res = $connectors.executeAsOwner('RESEND_SEND_EMAIL', payload)
             }
           }
 
           if (res && res.successful) {
             sent = true
+            resendResponse = res.data || res
           } else {
-            errorMsg = res
-              ? JSON.stringify(res.error || res.data || 'Erro no envio Resend')
-              : 'Sem resposta do conector'
+            if (!errorMsg) {
+              errorMsg = res
+                ? JSON.stringify(res.error || res.data || 'Erro no conector Resend')
+                : 'Sem resposta do conector'
+            }
           }
         } catch (errResend) {
-          console.log('Error calling RESEND_SEND_EMAIL:', errResend)
-          errorMsg = String(errResend)
+          console.log('Error calling RESEND_SEND_EMAIL connector:', errResend)
+          if (!errorMsg) errorMsg = String(errResend)
         }
       }
 
+      // 3. Tertiary: Internal MailClient fallback
       if (!sent) {
         try {
-          const fromName = fromAddr.includes('<')
-            ? fromAddr.split('<')[0].trim()
+          const fromName = configuredSender.includes('<')
+            ? configuredSender.split('<')[0].trim()
             : 'Andresa Souza Clinic'
-          const fromEmail = fromAddr.includes('<')
-            ? fromAddr.split('<')[1].replace('>', '').trim()
-            : fromAddr
+          const fromEmail = configuredSender.includes('<')
+            ? configuredSender.split('<')[1].replace('>', '').trim()
+            : configuredSender
 
           const msg = new MailerMessage({
             from: {
@@ -1983,7 +2242,7 @@ ${clinicFooterText}
         }
       }
 
-      return { sent, error: errorMsg }
+      return { sent, error: errorMsg, resendResponse }
     }
 
     const patientPdf = generatePdf(record, true)
