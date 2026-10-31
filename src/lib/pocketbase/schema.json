@@ -1,0 +1,273 @@
+{
+  "generatedAt": "2026-10-31T04:15:09.923Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "id = @request.auth.id",
+        "view": "id = @request.auth.id",
+        "create": "",
+        "update": "id = @request.auth.id",
+        "delete": "id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "clinic_settings",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "clinic_name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "notification_email",
+          "type": "email",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "form_submissions",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' || (token != '' && token = @request.query.token)",
+        "view": "@request.auth.id != '' || (token != '' && token = @request.query.token)",
+        "create": "",
+        "update": "@request.auth.id != '' || (token != '' && token = @request.query.token)",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "token",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "form_type",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["geral", "labios", "botox"]
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["pendente", "preenchida", "expirada"]
+        },
+        {
+          "name": "patient_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_cpf",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_phone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_birth_date",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_rg",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_address",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_profession",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_emergency_contact",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "answers",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "signature_data",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "accepted_term_text",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "accepted_term_title",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "signed_at",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ip_address",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_agent",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "document_hash",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "expires_at",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "email_delivery_status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["nao_enviado", "enviado", "falha"]
+        },
+        {
+          "name": "email_delivery_error",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "email_sent_at",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_form_token ON form_submissions (token)",
+        "CREATE INDEX idx_form_status_created ON form_submissions (status, created DESC)",
+        "CREATE INDEX idx_form_patient_name ON form_submissions (patient_name)"
+      ]
+    }
+  ]
+}
