@@ -1,10 +1,12 @@
 // pocketbase/hooks/forms.pb.js
 
-routerAdd('GET', '/backend/v1/probe-v12', (e) => {
+routerAdd('GET', '/backend/v1/test-resend-raw11', (e) => {
   let res = {}
   try {
-    const raw = $app.db().newQuery("SELECT value FROM _params WHERE id = 'settings'").row()
-    res.rawSettings = raw ? JSON.stringify(raw) : 'none'
+    const raw = new DynamicModel({ id: '', value: '' })
+    $app.db().newQuery("SELECT id, value FROM _params WHERE id = 'settings'").one(raw)
+    const settings = JSON.parse(raw.value)
+    res.smtp = settings.smtp
   } catch (err) {
     res.err = err.message
   }
