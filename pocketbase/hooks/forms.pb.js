@@ -1,5 +1,5 @@
 // pocketbase/hooks/forms.pb.js
-// Automações de fichas de anamnese da Andresa Souza Clinic.
+// Automações de fichas de anamnese da Andresa Souza Clinic (v0.0.9).
 
 // -------------------------------------------------------------
 // 1. Hook disparado após atualização do registro para 'preenchida'
