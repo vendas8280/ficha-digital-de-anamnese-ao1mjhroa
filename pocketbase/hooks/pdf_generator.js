@@ -99,7 +99,7 @@ function escapePdfText(str) {
   return res
 }
 
-// Deflate / Inflate
+// TINF Deflate/Inflate
 var TINF_OK = 0
 var TINF_DATA_ERROR = -3
 
@@ -915,7 +915,7 @@ function generatePdf(rec, isPatientCopy, settings) {
             ' RG',
         )
       }
-      ops.push(x.toFixed(2) + ' ' + y.toFixed(2) + ' ' + w.toFixed(2) + ' ' + h.toFixed(2) + ' re')
+      ops.push(x.toFixed(2) + ' ' + y.toFixed(2) + ' w ' + h.toFixed(2) + ' re')
       if (fillCol && strokeCol) ops.push('B')
       else if (fillCol) ops.push('f')
       else if (strokeCol) ops.push('S')
@@ -1629,7 +1629,8 @@ function sendEmailWithPdf(toAddr, subject, htmlBody, textBody, pdfData, settings
   return { sent: sent, error: errorMsg, resendId: resendId, responseData: responseData }
 }
 
-var exportedPdfGen = {
+// Inicia no escopo global para que qualquer VM possa acessar se necessário
+var helper = {
   generatePdf: generatePdf,
   getClinicSettings: getClinicSettings,
   buildEmail: buildEmail,
@@ -1639,8 +1640,6 @@ var exportedPdfGen = {
 
 if (typeof $app !== 'undefined') {
   try {
-    $app.__pdfGen = exportedPdfGen
+    $app.__pdfGen = helper
   } catch (_) {}
 }
-
-module.exports = exportedPdfGen
