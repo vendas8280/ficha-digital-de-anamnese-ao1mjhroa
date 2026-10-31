@@ -1,4 +1,4 @@
-// pocketbase/hooks/pdf_generator.js
+// pocketbase/hooks/pdf_generator.pb.js
 // Utilitários de geração de PDF e envio de e-mail para PocketBase JSVM (Goja)
 
 var B64_MAP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
@@ -1629,7 +1629,7 @@ function sendEmailWithPdf(toAddr, subject, htmlBody, textBody, pdfData, settings
   return { sent: sent, error: errorMsg, resendId: resendId, responseData: responseData }
 }
 
-// Inicia no escopo global para que qualquer VM possa acessar se necessário
+// Exporta funções utilitárias para require() e define fallback no escopo de $app
 var helper = {
   generatePdf: generatePdf,
   getClinicSettings: getClinicSettings,
@@ -1642,4 +1642,8 @@ if (typeof $app !== 'undefined') {
   try {
     $app.__pdfGen = helper
   } catch (_) {}
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = helper
 }
