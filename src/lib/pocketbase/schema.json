@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-31T15:18:22.992Z",
+  "generatedAt": "2026-10-31T17:04:28.222Z",
   "collections": [
     {
       "name": "users",
@@ -295,6 +295,18 @@
         {
           "name": "email_code_verified_at",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pdf_attached_to_email",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pdf_file",
+          "type": "file",
           "required": false,
           "system": false
         }
