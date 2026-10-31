@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { formsService, computeHash } from '@/services/forms'
 import type { FormSubmissionRecord } from '@/services/forms'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { TERMS_DATA } from '@/types/form'
 import { formatCPF, validateCPF, formatPhone } from '@/lib/formatters'
 import { SignatureCanvas } from '@/components/SignatureCanvas'
@@ -199,7 +200,12 @@ export default function PatientFormPage() {
 
       setSubmissionComplete(true)
     } catch (err: unknown) {
-      setSubmissionError(err instanceof Error ? err.message : 'Falha ao processar envio da ficha.')
+      const msg = getErrorMessage(err)
+      setSubmissionError(
+        msg === 'Failed to update record.'
+          ? 'Não foi possível salvar o preenchimento da ficha. Por favor, tente novamente.'
+          : msg || 'Falha ao processar envio da ficha.',
+      )
     } finally {
       setSubmitting(false)
     }

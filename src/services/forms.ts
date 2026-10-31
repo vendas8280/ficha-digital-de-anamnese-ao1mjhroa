@@ -136,17 +136,14 @@ export const formsService = {
       document_hash: string
     },
   ): Promise<FormSubmissionRecord> {
-    const record = await pb.collection('form_submissions').update(
-      id,
-      {
-        ...data,
-        status: 'preenchida',
-        token, // maintain token
-      },
-      {
-        query: { token },
-      },
-    )
+    const payload = {
+      ...data,
+      status: 'preenchida' as const,
+      token, // maintain token
+    }
+    const record = await pb.collection('form_submissions').update(id, payload, {
+      query: { token },
+    })
     return record as unknown as FormSubmissionRecord
   },
 
