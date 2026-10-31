@@ -163,13 +163,17 @@ export default function FormDetailPage() {
 
           <div className="flex items-center gap-2">
             {form.status === 'preenchida' && (
-              <Button
-                onClick={() => printFormPDF(form)}
-                className="bg-rose-900 hover:bg-rose-950 text-white text-xs gap-1.5 shadow-sm"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Baixar Ficha em PDF
-              </Button>
+              <>
+                <a
+                  href={`/backend/v1/forms/${form.id}/pdf?via=clinica`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center text-xs h-9 px-3.5 bg-rose-900 hover:bg-rose-950 text-white rounded-md font-medium shadow-sm transition-colors gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Visualizar / Baixar PDF Oficial
+                </a>
+              </>
             )}
           </div>
         </div>
