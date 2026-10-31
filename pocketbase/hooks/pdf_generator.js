@@ -1629,10 +1629,18 @@ function sendEmailWithPdf(toAddr, subject, htmlBody, textBody, pdfData, settings
   return { sent: sent, error: errorMsg, resendId: resendId, responseData: responseData }
 }
 
-module.exports = {
+var exportedPdfGen = {
   generatePdf: generatePdf,
   getClinicSettings: getClinicSettings,
   buildEmail: buildEmail,
   sendEmailWithPdf: sendEmailWithPdf,
   formatBrDateTime: formatBrDateTime,
 }
+
+if (typeof $app !== 'undefined') {
+  try {
+    $app.__pdfGen = exportedPdfGen
+  } catch (_) {}
+}
+
+module.exports = exportedPdfGen

@@ -150,15 +150,11 @@ export const formsService = {
     email: string,
     patient_name?: string,
   ): Promise<{ success: boolean; message?: string }> {
-    try {
-      const res = await pb.send('/backend/v1/forms/send-verification-code', {
-        method: 'POST',
-        body: { token, email, patient_name },
-      })
-      return res as { success: boolean; message?: string }
-    } catch (err: unknown) {
-      throw new Error(err instanceof Error ? err.message : 'Falha ao enviar código para o e-mail')
-    }
+    const res = await pb.send('/backend/v1/forms/send-verification-code', {
+      method: 'POST',
+      body: { token, email, patient_name },
+    })
+    return res as { success: boolean; message?: string }
   },
 
   // Verify code sent to patient email
@@ -167,17 +163,11 @@ export const formsService = {
     email: string,
     code: string,
   ): Promise<{ success: boolean; message?: string }> {
-    try {
-      const res = await pb.send('/backend/v1/forms/verify-email-code', {
-        method: 'POST',
-        body: { token, email, code },
-      })
-      return res as { success: boolean; message?: string }
-    } catch (err: unknown) {
-      throw new Error(
-        err instanceof Error ? err.message : 'Código de verificação incorreto ou expirado',
-      )
-    }
+    const res = await pb.send('/backend/v1/forms/verify-email-code', {
+      method: 'POST',
+      body: { token, email, code },
+    })
+    return res as { success: boolean; message?: string }
   },
 
   // Record audit trail event

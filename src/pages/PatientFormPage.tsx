@@ -199,7 +199,12 @@ export default function PatientFormPage() {
       await formsService.sendVerificationCode(token, patientEmail, patientName)
       setCodeSent(true)
     } catch (err: unknown) {
-      setCodeError(err instanceof Error ? err.message : 'Falha ao enviar código')
+      const msg = getErrorMessage(err)
+      setCodeError(
+        msg && msg !== 'Something went wrong.' && msg !== 'An unexpected error occurred.'
+          ? msg
+          : 'Não foi possível enviar o código para o seu e-mail. Por favor, tente novamente.',
+      )
     } finally {
       setSendingCode(false)
     }
@@ -218,7 +223,12 @@ export default function PatientFormPage() {
         changeStep(3, 'Histórico de Saúde')
       }, 700)
     } catch (err: unknown) {
-      setCodeError(err instanceof Error ? err.message : 'Código incorreto ou expirado')
+      const msg = getErrorMessage(err)
+      setCodeError(
+        msg && msg !== 'Something went wrong.' && msg !== 'An unexpected error occurred.'
+          ? msg
+          : 'Código de verificação incorreto ou expirado. Verifique os 6 dígitos ou solicite um novo código.',
+      )
     } finally {
       setVerifyingCode(false)
     }
