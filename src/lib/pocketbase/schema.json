@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-31T04:53:49.856Z",
+  "generatedAt": "2026-10-31T15:18:22.992Z",
   "collections": [
     {
       "name": "users",
@@ -86,6 +86,36 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "sender_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "technical_responsible",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "professional_register",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "clinic_cnpj",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "clinic_address",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -119,7 +149,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["pendente", "preenchida", "expirada"]
+          "selectValues": ["pendente", "preenchida", "expirada", "codigo_validado"]
         },
         {
           "name": "patient_name",
@@ -261,12 +291,164 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "email_code_verified_at",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE UNIQUE INDEX idx_form_token ON form_submissions (token)",
         "CREATE INDEX idx_form_status_created ON form_submissions (status, created DESC)",
         "CREATE INDEX idx_form_patient_name ON form_submissions (patient_name)"
+      ]
+    },
+    {
+      "name": "audit_events",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' || form_submission.token = @request.query.token",
+        "view": "@request.auth.id != '' || form_submission.token = @request.query.token",
+        "create": "",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "form_submission",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "form_submissions"
+        },
+        {
+          "name": "event_type",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "step_number",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ip_address",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_agent",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "metadata",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "timestamp",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_audit_form_submission ON audit_events (form_submission, created ASC)"
+      ]
+    },
+    {
+      "name": "email_verifications",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "",
+        "update": "",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "form_submission",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "form_submissions"
+        },
+        {
+          "name": "email",
+          "type": "email",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "verified",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "expires_at",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "verified_at",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_verif_form_email ON email_verifications (form_submission, email)"
       ]
     }
   ]

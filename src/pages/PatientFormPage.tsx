@@ -24,10 +24,12 @@ import {
   FileCheck,
   HeartPulse,
   Sparkles,
-  Info,
   Clock,
   Send,
   Loader2,
+  MailCheck,
+  KeyRound,
+  RefreshCw,
 } from 'lucide-react'
 
 export default function PatientFormPage() {
@@ -42,10 +44,11 @@ export default function PatientFormPage() {
   // Current step:
   // 0: Boas-vindas e Aviso de Privacidade LGPD
   // 1: Dados Pessoais & Documentos
-  // 2: Histórico de Saúde Geral & Alergias
-  // 3: Perguntas Específicas do Procedimento
-  // 4: Termo de Consentimento (com rolagem obrigatória)
-  // 5: Assinatura Digital com o dedo e Envio
+  // 2: Validação de Código de E-mail (Novo)
+  // 3: Histórico de Saúde Geral & Alergias
+  // 4: Perguntas Específicas do Procedimento
+  // 5: Termo de Consentimento (com rolagem obrigatória e aceite)
+  // 6: Assinatura Digital e Envio
   const [step, setStep] = useState(0)
 
   // Step 1: Dados pessoais
@@ -60,7 +63,15 @@ export default function PatientFormPage() {
   const [patientProfession, setPatientProfession] = useState('')
   const [patientEmergencyContact, setPatientEmergencyContact] = useState('')
 
-  // Step 2: Saúde Geral
+  // Step 2: Validação de E-mail
+  const [emailCode, setEmailCode] = useState('')
+  const [sendingCode, setSendingCode] = useState(false)
+  const [codeSent, setCodeSent] = useState(false)
+  const [verifyingCode, setVerifyingCode] = useState(false)
+  const [codeVerified, setCodeVerified] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
+
+  // Step 3: Saúde Geral
   const [temAlergias, setTemAlergias] = useState<'sim' | 'nao'>('nao')
   const [detalhesAlergias, setDetalhesAlergias] = useState('')
   const [usaMedicamentos, setUsaMedicamentos] = useState<'sim' | 'nao'>('nao')
@@ -72,15 +83,15 @@ export default function PatientFormPage() {
   )
   const [doencasCronicas, setDoencasCronicas] = useState('')
 
-  // Step 3: Procedimento específico
+  // Step 4: Procedimento específico
   const [respostasEspecificas, setRespostasEspecificas] = useState<Record<string, string>>({})
 
-  // Step 4: Termo e rolagem
+  // Step 5: Termo e rolagem
   const termScrollRef = useRef<HTMLDivElement | null>(null)
   const [hasScrolledToEnd, setHasScrolledToEnd] = useState(false)
   const [termoAceito, setTermoAceito] = useState(false)
 
-  // Step 5: Assinatura
+  // Step 6: Assinatura
   const [signatureData, setSignatureData] = useState<string | null>(null)
 
   // Load form record
@@ -120,6 +131,22 @@ export default function PatientFormPage() {
       setFormRecord(record)
       if (record.patient_name) setPatientName(record.patient_name)
       if (record.patient_phone) setPatientPhone(record.patient_phone)
+      if (record.patient_email) {
+        setPatientEmail(record.patient_email)
+        setPatientEmailConfirm(record.patient_email)
+      }
+      if (record.status === 'codigo_validado' || record.email_code_verified_at) {
+        setCodeVerified(true)
+      }
+
+      // Record audit event: link opened
+      formsService.recordAuditEvent({
+        token,
+        event_type: 'link_aberto',
+        description: 'Paciente abriu o link seguro da ficha de anamnese',
+        step_number: 0,
+      })
+
       setLoading(false)
     }
 
@@ -150,6 +177,66 @@ export default function PatientFormPage() {
     return true
   }
 
+  // Transition to step and record audit
+  const changeStep = (nextStep: number, stepName: string) => {
+    setStep(nextStep)
+    if (token) {
+      formsService.recordAuditEvent({
+        token,
+        event_type: 'avanco_etapa',
+        description: `Paciente avançou para a etapa ${nextStep}: ${stepName}`,
+        step_number: nextStep,
+      })
+    }
+  }
+
+  // Send verification code
+  const handleSendCode = async () => {
+    if (!token || !patientEmail) return
+    setSendingCode(true)
+    setCodeError(null)
+    try {
+      await formsService.sendVerificationCode(token, patientEmail, patientName)
+      setCodeSent(true)
+    } catch (err: unknown) {
+      setCodeError(err instanceof Error ? err.message : 'Falha ao enviar código')
+    } finally {
+      setSendingCode(false)
+    }
+  }
+
+  // Verify code
+  const handleVerifyCode = async () => {
+    if (!token || !patientEmail || !emailCode.trim()) return
+    setVerifyingCode(true)
+    setCodeError(null)
+    try {
+      await formsService.verifyEmailCode(token, patientEmail, emailCode.trim())
+      setCodeVerified(true)
+      // Advance to step 3 after slight delay
+      setTimeout(() => {
+        changeStep(3, 'Histórico de Saúde')
+      }, 700)
+    } catch (err: unknown) {
+      setCodeError(err instanceof Error ? err.message : 'Código incorreto ou expirado')
+    } finally {
+      setVerifyingCode(false)
+    }
+  }
+
+  // Handle Term acceptance toggle
+  const handleAcceptTerm = (checked: boolean) => {
+    setTermoAceito(checked)
+    if (checked && token) {
+      formsService.recordAuditEvent({
+        token,
+        event_type: 'aceite_termo',
+        description: `Paciente marcou o aceite no termo de consentimento: ${activeTerm?.title}`,
+        step_number: 5,
+      })
+    }
+  }
+
   // Handle Form Submission
   const handleSubmit = async () => {
     if (!formRecord || !token || !signatureData || !termoAceito || !activeTerm) return
@@ -160,7 +247,9 @@ export default function PatientFormPage() {
     try {
       const signedAt = new Date().toISOString()
       const userAgent = navigator.userAgent
-      const ipAddress = 'Detectado no envio'
+
+      // Real IP address captured from backend
+      const ipAddress = await formsService.getRealClientIp()
 
       // Compile answers
       const answersCompiled: Record<string, unknown> = {
@@ -178,6 +267,7 @@ export default function PatientFormPage() {
       const hashContent = `${patientName}|${patientCpf}|${patientEmail}|${activeTerm.title}|${signedAt}|${token}`
       const docHash = await computeHash(hashContent)
 
+      // Submit form
       await formsService.submitForm(formRecord.id, token, {
         patient_name: patientName,
         patient_cpf: patientCpf,
@@ -196,6 +286,18 @@ export default function PatientFormPage() {
         ip_address: ipAddress,
         user_agent: userAgent,
         document_hash: docHash,
+      })
+
+      // Register audit event: signed
+      await formsService.recordAuditEvent({
+        token,
+        event_type: 'termo_assinado',
+        description: `Paciente concluiu a assinatura eletrônica da ficha de anamnese (Hash: ${docHash})`,
+        step_number: 6,
+        metadata: {
+          ip: ipAddress,
+          hash: docHash,
+        },
       })
 
       setSubmissionComplete(true)
@@ -272,8 +374,11 @@ export default function PatientFormPage() {
                 arquivados com validade jurídica.
               </p>
               <p>
-                Enviamos uma cópia completa de confirmação para o seu e-mail:{' '}
+                Enviamos uma cópia completa de confirmação com o PDF em anexo para o seu e-mail:{' '}
                 <strong>{patientEmail}</strong>.
+              </p>
+              <p className="text-emerald-800 font-medium italic">
+                Esta é a sua via do documento assinado. Guarde para seus registros.
               </p>
             </div>
 
@@ -309,8 +414,8 @@ export default function PatientFormPage() {
     )
   }
 
-  // Progress percentage (0 to 5)
-  const progressPercent = Math.round((step / 5) * 100)
+  // Progress percentage (0 to 6)
+  const progressPercent = Math.round((step / 6) * 100)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-rose-50/70 via-white to-rose-50/40 pb-12">
@@ -322,7 +427,7 @@ export default function PatientFormPage() {
               Andresa Souza Clinic
             </h1>
             <p className="text-[11px] text-rose-700 font-medium">
-              Ficha Digital &bull; {activeTerm?.subtitle.split('&bull;')[1] || 'Anamnese Segura'}
+              Ficha Digital &bull; {activeTerm?.subtitle.split('•')[1] || 'Anamnese Segura'}
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full text-xs border border-emerald-200 font-medium">
@@ -335,7 +440,7 @@ export default function PatientFormPage() {
         {step > 0 && (
           <div className="px-4 pb-2 max-w-xl mx-auto">
             <div className="flex justify-between text-[11px] font-medium text-rose-900 mb-1">
-              <span>Etapa {step} de 5</span>
+              <span>Etapa {step} de 6</span>
               <span>{progressPercent}% concluído</span>
             </div>
             <Progress value={progressPercent} className="h-1.5 bg-rose-100" />
@@ -394,7 +499,7 @@ export default function PatientFormPage() {
               </div>
 
               <Button
-                onClick={() => setStep(1)}
+                onClick={() => changeStep(1, 'Dados Cadastrais')}
                 className="w-full bg-rose-800 hover:bg-rose-900 text-white font-medium py-2.5 text-sm gap-2"
               >
                 Começar Preenchimento <ArrowRight className="w-4 h-4" />
@@ -408,7 +513,7 @@ export default function PatientFormPage() {
           <Card className="border-rose-200 shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2 text-rose-800 text-xs font-semibold uppercase tracking-wider">
-                <span>Etapa 1 de 5</span> &bull; <span>Identificação</span>
+                <span>Etapa 1 de 6</span> &bull; <span>Identificação</span>
               </div>
               <CardTitle className="text-lg text-rose-950 font-bold">
                 Seus Dados Cadastrais
@@ -492,7 +597,7 @@ export default function PatientFormPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="email" className="text-xs font-medium text-slate-800">
-                  E-mail para Receber o Comprovante *
+                  E-mail para Receber o Comprovante Oficial *
                 </Label>
                 <Input
                   id="email"
@@ -567,29 +672,151 @@ export default function PatientFormPage() {
               <div className="pt-2 flex justify-between gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setStep(0)}
+                  onClick={() => changeStep(0, 'Boas-vindas')}
                   className="text-xs border-slate-300"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Voltar
                 </Button>
                 <Button
-                  onClick={() => setStep(2)}
+                  onClick={() => changeStep(2, 'Validação de E-mail')}
                   disabled={!isStep1Valid()}
                   className="bg-rose-800 hover:bg-rose-900 text-white text-xs gap-1.5"
                 >
-                  Continuar <ArrowRight className="w-3.5 h-3.5" />
+                  Continuar para Validação <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* ETAPA 2: Histórico de Saúde Geral */}
+        {/* ETAPA 2: Validação de Código de E-mail (Novo) */}
         {step === 2 && (
+          <Card className="border-rose-200 shadow-md">
+            <CardHeader className="pb-3 text-center">
+              <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-2 text-rose-800">
+                <KeyRound className="w-6 h-6" />
+              </div>
+              <div className="flex items-center justify-center gap-2 text-rose-800 text-xs font-semibold uppercase tracking-wider">
+                <span>Etapa 2 de 6</span> &bull; <span>Validação de E-mail</span>
+              </div>
+              <CardTitle className="text-lg text-rose-950 font-bold mt-1">
+                Confirmação do seu E-mail
+              </CardTitle>
+              <CardDescription className="text-xs max-w-sm mx-auto">
+                Para sua segurança jurídica e garantia de que você receberá a sua via em PDF do
+                documento assinado, validamos seu e-mail: <strong>{patientEmail}</strong>.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!codeVerified ? (
+                <>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-3 text-center">
+                    <p>Clique no botão abaixo para receber um código de 6 dígitos no seu e-mail:</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSendCode}
+                      disabled={sendingCode}
+                      className="border-rose-300 text-rose-900 hover:bg-rose-50 text-xs gap-1.5"
+                    >
+                      {sendingCode ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando código...
+                        </>
+                      ) : codeSent ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5" /> Reenviar Novo Código
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" /> Enviar Código para {patientEmail}
+                        </>
+                      )}
+                    </Button>
+                    {codeSent && (
+                      <p className="text-[11px] text-emerald-700 font-medium">
+                        ✓ Código enviado! Verifique sua caixa de entrada e spam.
+                      </p>
+                    )}
+                  </div>
+
+                  {codeSent && (
+                    <div className="space-y-2 pt-2">
+                      <Label
+                        htmlFor="inputCode"
+                        className="text-xs font-semibold text-center block"
+                      >
+                        Digite o código de 6 dígitos recebido:
+                      </Label>
+                      <Input
+                        id="inputCode"
+                        maxLength={6}
+                        placeholder="123456"
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ''))}
+                        className="text-center font-mono text-xl tracking-widest max-w-[200px] mx-auto h-12"
+                      />
+
+                      {codeError && (
+                        <p className="text-xs text-red-600 text-center font-medium">{codeError}</p>
+                      )}
+
+                      <Button
+                        type="button"
+                        onClick={handleVerifyCode}
+                        disabled={emailCode.length < 6 || verifyingCode}
+                        className="w-full bg-rose-900 hover:bg-rose-950 text-white text-xs gap-1.5 mt-2"
+                      >
+                        {verifyingCode ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Validando...
+                          </>
+                        ) : (
+                          <>
+                            <MailCheck className="w-3.5 h-3.5" /> Validar Código de E-mail
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 text-center space-y-2">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                  <p className="font-bold text-emerald-950 text-sm">E-mail Validado com Sucesso!</p>
+                  <p className="text-xs text-emerald-800">
+                    O código foi confirmado e o status &quot;código validado&quot; foi registrado na
+                    trilha de auditoria.
+                  </p>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-between gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => changeStep(1, 'Dados Cadastrais')}
+                  className="text-xs border-slate-300"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Voltar
+                </Button>
+                <Button
+                  onClick={() => changeStep(3, 'Histórico de Saúde')}
+                  disabled={!codeVerified}
+                  className="bg-rose-800 hover:bg-rose-900 text-white text-xs gap-1.5"
+                >
+                  Continuar para Saúde <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ETAPA 3: Histórico de Saúde Geral */}
+        {step === 3 && (
           <Card className="border-rose-200 shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2 text-rose-800 text-xs font-semibold uppercase tracking-wider">
-                <span>Etapa 2 de 5</span> &bull; <span>Saúde Geral</span>
+                <span>Etapa 3 de 6</span> &bull; <span>Saúde Geral</span>
               </div>
               <CardTitle className="text-lg text-rose-950 font-bold">
                 Histórico Clínico e Alergias
@@ -757,13 +984,13 @@ export default function PatientFormPage() {
               <div className="pt-2 flex justify-between gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setStep(1)}
+                  onClick={() => changeStep(2, 'Validação de E-mail')}
                   className="text-xs border-slate-300"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Voltar
                 </Button>
                 <Button
-                  onClick={() => setStep(3)}
+                  onClick={() => changeStep(4, 'Perguntas do Procedimento')}
                   className="bg-rose-800 hover:bg-rose-900 text-white text-xs gap-1.5"
                 >
                   Próxima Etapa <ArrowRight className="w-3.5 h-3.5" />
@@ -773,12 +1000,12 @@ export default function PatientFormPage() {
           </Card>
         )}
 
-        {/* ETAPA 3: Perguntas Específicas do Procedimento */}
-        {step === 3 && (
+        {/* ETAPA 4: Perguntas Específicas do Procedimento */}
+        {step === 4 && (
           <Card className="border-rose-200 shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2 text-rose-800 text-xs font-semibold uppercase tracking-wider">
-                <span>Etapa 3 de 5</span> &bull; <span>Detalhes Específicos</span>
+                <span>Etapa 4 de 6</span> &bull; <span>Detalhes Específicos</span>
               </div>
               <CardTitle className="text-lg text-rose-950 font-bold">
                 Sobre o Procedimento: {formRecord?.form_type.toUpperCase()}
@@ -1024,13 +1251,13 @@ export default function PatientFormPage() {
               <div className="pt-2 flex justify-between gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setStep(2)}
+                  onClick={() => changeStep(3, 'Histórico de Saúde')}
                   className="text-xs border-slate-300"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Voltar
                 </Button>
                 <Button
-                  onClick={() => setStep(4)}
+                  onClick={() => changeStep(5, 'Termo de Consentimento')}
                   className="bg-rose-800 hover:bg-rose-900 text-white text-xs gap-1.5"
                 >
                   Ir para o Termo <ArrowRight className="w-3.5 h-3.5" />
@@ -1040,12 +1267,12 @@ export default function PatientFormPage() {
           </Card>
         )}
 
-        {/* ETAPA 4: Termo de Consentimento com Rolagem Obrigatória */}
-        {step === 4 && activeTerm && (
+        {/* ETAPA 5: Termo de Consentimento com Rolagem Obrigatória */}
+        {step === 5 && activeTerm && (
           <Card className="border-rose-200 shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2 text-rose-800 text-xs font-semibold uppercase tracking-wider">
-                <span>Etapa 4 de 5</span> &bull; <span>Termo Legal</span>
+                <span>Etapa 5 de 6</span> &bull; <span>Termo Legal</span>
               </div>
               <CardTitle className="text-base sm:text-lg text-rose-950 font-bold leading-snug">
                 {activeTerm.title}
@@ -1087,7 +1314,7 @@ export default function PatientFormPage() {
                     id="aceite-termo"
                     checked={termoAceito}
                     disabled={!hasScrolledToEnd}
-                    onCheckedChange={(checked) => setTermoAceito(!!checked)}
+                    onCheckedChange={(checked) => handleAcceptTerm(!!checked)}
                     className="mt-0.5 data-[state=checked]:bg-rose-800 data-[state=checked]:border-rose-800"
                   />
                   <div className="grid gap-1 leading-none">
@@ -1111,13 +1338,13 @@ export default function PatientFormPage() {
               <div className="pt-2 flex justify-between gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setStep(3)}
+                  onClick={() => changeStep(4, 'Perguntas do Procedimento')}
                   className="text-xs border-slate-300"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Voltar
                 </Button>
                 <Button
-                  onClick={() => setStep(5)}
+                  onClick={() => changeStep(6, 'Assinatura Digital')}
                   disabled={!termoAceito}
                   className="bg-rose-800 hover:bg-rose-900 text-white text-xs gap-1.5"
                 >
@@ -1128,12 +1355,12 @@ export default function PatientFormPage() {
           </Card>
         )}
 
-        {/* ETAPA 5: Assinatura Digital e Envio */}
-        {step === 5 && (
+        {/* ETAPA 6: Assinatura Digital e Envio */}
+        {step === 6 && (
           <Card className="border-rose-200 shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2 text-rose-800 text-xs font-semibold uppercase tracking-wider">
-                <span>Etapa 5 de 5</span> &bull; <span>Assinatura Digital</span>
+                <span>Etapa 6 de 6</span> &bull; <span>Assinatura Digital</span>
               </div>
               <CardTitle className="text-lg text-rose-950 font-bold">Assine com o Dedo</CardTitle>
               <CardDescription className="text-xs">
@@ -1156,9 +1383,9 @@ export default function PatientFormPage() {
                 <div>
                   &bull; Nome: {patientName} (CPF: {patientCpf})
                 </div>
-                <div>&bull; Data e Hora: {new Date().toLocaleDateString('pt-BR')} (ao enviar)</div>
-                <div>&bull; IP e Dispositivo: Registrados automaticamente para integridade</div>
-                <div>&bull; Comprovante será enviado para: {patientEmail}</div>
+                <div>&bull; E-mail validado: {patientEmail}</div>
+                <div>&bull; Data e Hora: Horário oficial de Brasília (registrado no envio)</div>
+                <div>&bull; IP Real do Dispositivo: Capturado no backend no momento do envio</div>
               </div>
 
               {submissionError && (
@@ -1171,7 +1398,7 @@ export default function PatientFormPage() {
               <div className="pt-2 flex justify-between gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setStep(4)}
+                  onClick={() => changeStep(5, 'Termo de Consentimento')}
                   disabled={submitting}
                   className="text-xs border-slate-300"
                 >

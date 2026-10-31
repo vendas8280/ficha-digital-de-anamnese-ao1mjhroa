@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { formsService } from '@/services/forms'
-import type { FormSubmissionRecord } from '@/services/forms'
+import type { FormSubmissionRecord, AuditEventRecord } from '@/services/forms'
 import { printFormPDF } from '@/lib/pdf'
 import { formatDateBR } from '@/lib/formatters'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,7 @@ export default function FormDetailPage() {
   const { toast } = useToast()
 
   const [form, setForm] = useState<FormSubmissionRecord | null>(null)
+  const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [resendingEmail, setResendingEmail] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
@@ -54,6 +55,12 @@ export default function FormDetailPage() {
     try {
       const data = await formsService.getById(id)
       setForm(data)
+      try {
+        const events = await formsService.listAuditEvents(id)
+        setAuditEvents(events)
+      } catch {
+        /* intentionally ignored */
+      }
     } catch {
       toast({
         title: 'Ficha não encontrada',
@@ -180,12 +187,17 @@ export default function FormDetailPage() {
                 <div className="mt-1">
                   {form.status === 'preenchida' && (
                     <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs">
-                      <CheckCircle2 className="w-3 h-3 mr-1" /> Preenchida & Assinada
+                      <CheckCircle2 className="w-3 h-3 mr-1" /> Termo Assinado & Preenchida
+                    </Badge>
+                  )}
+                  {form.status === 'codigo_validado' && (
+                    <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">
+                      <CheckCircle2 className="w-3 h-3 mr-1" /> Código Validado
                     </Badge>
                   )}
                   {form.status === 'pendente' && (
                     <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
-                      <Clock className="w-3 h-3 mr-1" /> Aguardando Paciente
+                      <Clock className="w-3 h-3 mr-1" /> Pendente de Preenchimento
                     </Badge>
                   )}
                   {form.status === 'expirada' && (
@@ -361,7 +373,53 @@ export default function FormDetailPage() {
           </CardContent>
         </Card>
 
-        {/* 3. Term of Consent & Digital Signature */}
+        {/* 3. Audit Trail / Trilha de Auditoria Completa */}
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-rose-800" />
+              3. Trilha de Auditoria Completa da Ficha
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Histórico cronológico detalhado com data/hora, endereço IP e dispositivo registrado a
+              cada evento.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {auditEvents.length > 0 ? (
+              <div className="space-y-3">
+                <div className="border-l-2 border-rose-300 ml-3 pl-4 space-y-4">
+                  {auditEvents.map((ev, idx) => (
+                    <div key={ev.id || idx} className="relative text-xs">
+                      <div className="absolute -left-[23px] top-0.5 w-3.5 h-3.5 rounded-full bg-rose-700 border-2 border-white shadow-sm" />
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="font-semibold text-slate-900 capitalize">
+                          {ev.event_type.replace(/_/g, ' ')}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {formatDateBR(ev.timestamp || ev.created)}
+                        </span>
+                      </div>
+                      <p className="text-slate-700 mt-0.5">{ev.description}</p>
+                      <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-1 font-mono">
+                        <span>IP: {ev.ip_address || 'Não disponível'}</span>
+                        {ev.user_agent && (
+                          <span className="truncate max-w-xs">Navegador: {ev.user_agent}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground py-2">
+                Nenhum evento registrado ainda na trilha de auditoria para esta ficha.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 4. Term of Consent & Digital Signature */}
         {form.status === 'preenchida' && (
           <Card className="border-slate-200 shadow-sm">
             <CardHeader className="pb-3">

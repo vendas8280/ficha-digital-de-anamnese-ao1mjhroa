@@ -27,6 +27,7 @@ export interface FormSubmissionRecord {
   email_delivery_status?: EmailDeliveryStatus
   email_delivery_error?: string
   email_sent_at?: string
+  email_code_verified_at?: string
   created: string
   updated: string
 }
@@ -36,6 +37,25 @@ export interface ClinicSettingsRecord {
   clinic_name: string
   notification_email: string
   phone?: string
+  sender_email?: string
+  technical_responsible?: string
+  professional_register?: string
+  clinic_cnpj?: string
+  clinic_address?: string
+  created: string
+  updated: string
+}
+
+export interface AuditEventRecord {
+  id: string
+  form_submission: string
+  event_type: string
+  description: string
+  step_number?: number
+  ip_address?: string
+  user_agent?: string
+  metadata?: Record<string, unknown>
+  timestamp: string
   created: string
   updated: string
 }
@@ -112,6 +132,84 @@ export const formsService = {
     }
   },
 
+  // Fetch real client IP address from backend
+  async getRealClientIp(): Promise<string> {
+    try {
+      const res = await pb.send('/backend/v1/client-ip', { method: 'GET' })
+      return (res as { ip?: string }).ip || 'Não disponível'
+    } catch {
+      return 'Não disponível'
+    }
+  },
+
+  // Send verification code to patient email
+  async sendVerificationCode(
+    token: string,
+    email: string,
+    patient_name?: string,
+  ): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await pb.send('/backend/v1/forms/send-verification-code', {
+        method: 'POST',
+        body: { token, email, patient_name },
+      })
+      return res as { success: boolean; message?: string }
+    } catch (err: unknown) {
+      throw new Error(err instanceof Error ? err.message : 'Falha ao enviar código para o e-mail')
+    }
+  },
+
+  // Verify code sent to patient email
+  async verifyEmailCode(
+    token: string,
+    email: string,
+    code: string,
+  ): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await pb.send('/backend/v1/forms/verify-email-code', {
+        method: 'POST',
+        body: { token, email, code },
+      })
+      return res as { success: boolean; message?: string }
+    } catch (err: unknown) {
+      throw new Error(
+        err instanceof Error ? err.message : 'Código de verificação incorreto ou expirado',
+      )
+    }
+  },
+
+  // Record audit trail event
+  async recordAuditEvent(data: {
+    token: string
+    event_type: string
+    description: string
+    step_number?: number
+    metadata?: Record<string, unknown>
+  }): Promise<void> {
+    try {
+      await pb.send('/backend/v1/forms/audit-event', {
+        method: 'POST',
+        body: data,
+      })
+    } catch (err) {
+      console.warn('Falha ao registrar evento de auditoria:', err)
+    }
+  },
+
+  // List audit events for a form submission
+  async listAuditEvents(formSubmissionId: string, token?: string): Promise<AuditEventRecord[]> {
+    try {
+      const records = await pb.collection('audit_events').getFullList({
+        filter: `form_submission = "${formSubmissionId}"`,
+        sort: 'created',
+        query: token ? { token } : undefined,
+      })
+      return records as unknown as AuditEventRecord[]
+    } catch {
+      return []
+    }
+  },
+
   // Public: Patient submits filled form and signs
   async submitForm(
     id: string,
@@ -139,7 +237,7 @@ export const formsService = {
     const payload = {
       ...data,
       status: 'preenchida' as const,
-      token, // maintain token
+      token,
     }
     const record = await pb.collection('form_submissions').update(id, payload, {
       query: { token },
@@ -184,6 +282,11 @@ export const clinicSettingsService = {
     clinic_name: string
     notification_email: string
     phone?: string
+    sender_email?: string
+    technical_responsible?: string
+    professional_register?: string
+    clinic_cnpj?: string
+    clinic_address?: string
   }): Promise<ClinicSettingsRecord> {
     const existing = await this.getSettings()
     if (existing) {
