@@ -87,7 +87,7 @@ export default function SettingsPage() {
       toast({
         title: 'Configurações salvas com sucesso!',
         description:
-          'Dados de remetente, responsável técnica e e-mail de notificações atualizados.',
+          'Dados de remetente, profissional responsável e e-mail de notificações atualizados.',
       })
     } catch {
       toast({
@@ -219,7 +219,7 @@ export default function SettingsPage() {
                     className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
                   >
                     <UserCheck className="w-3.5 h-3.5 text-slate-500" />
-                    Responsável Técnica
+                    Profissional Responsável
                   </Label>
                   <Input
                     id="techResp"

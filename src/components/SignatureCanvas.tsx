@@ -81,7 +81,8 @@ export const SignatureCanvas: React.FC<SignatureCanvasProps> = ({ onSave, onClea
 
   const exportSignature = (canvas: HTMLCanvasElement) => {
     try {
-      // Create a normalized export canvas (e.g. max width 600) to keep base64 lightweight and crisp
+      // Create a normalized export canvas (max width 600) with solid white background
+      // for crisp PDF rendering (both JPEG and PNG parsers handle opaque background reliably)
       const targetWidth = Math.min(canvas.width, 600)
       const scale = targetWidth / canvas.width
       const targetHeight = Math.round(canvas.height * scale)
@@ -92,9 +93,12 @@ export const SignatureCanvas: React.FC<SignatureCanvasProps> = ({ onSave, onClea
 
       const expCtx = exportCanvas.getContext('2d')
       if (expCtx) {
+        // Fill opaque white background so strokes are crisp and contrast is sharp
+        expCtx.fillStyle = '#ffffff'
+        expCtx.fillRect(0, 0, targetWidth, targetHeight)
         expCtx.drawImage(canvas, 0, 0, targetWidth, targetHeight)
-        // Prefer image/png with transparent background for clean PDF and screen rendering
-        return exportCanvas.toDataURL('image/png')
+        // Export high-quality JPEG (or PNG) with white background
+        return exportCanvas.toDataURL('image/jpeg', 0.92)
       }
     } catch {
       // Fallback to direct canvas export

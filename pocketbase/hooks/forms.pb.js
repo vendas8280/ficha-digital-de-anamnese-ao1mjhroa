@@ -1,12 +1,13 @@
-// pocketbase/hooks/forms.pb.js
+// pocketbase/hooks/forms.pb.js - v2
 // Back-end oficial da Ficha Digital de Anamnese - Andresa Souza Clinic
 // Contém todas as rotas e hooks oficiais para validação, auditoria, envio de e-mails e geração de PDF.
-// Autocontido: sem declarações fora de callbacks que quebrem o scoping do Goja/PocketBase VM pool.
+// Autocontido: cada callback é 100% autocontido sem nenhuma declaração top-level.
 
 /**
  * GET /backend/v1/client-ip
  * Retorna o IP real do cliente verificando headers padrão de proxy
  */
+
 routerAdd('GET', '/backend/v1/client-ip', (e) => {
   var headers = e.request.header
   var ip = ''
@@ -364,6 +365,7 @@ routerAdd('POST', '/backend/v1/forms/audit-event', (e) => {
  * Body: { id: string }
  * Reenvio manual do comprovante por ID (usado no painel da clínica)
  */
+
 routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
   var body = {}
   try {
@@ -372,7 +374,11 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
     body = {}
   }
 
-  var id = body.id || ''
+  var qInfo = {}
+  try {
+    qInfo = e.requestInfo().query || {}
+  } catch (_) {}
+  var id = body.id || body.form_id || qInfo.id || qInfo.form_id || ''
   if (!id) {
     return e.json(400, { success: false, message: 'ID da ficha e obrigatorio.' })
   }
@@ -384,114 +390,6 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
     return e.json(404, { success: false, message: 'Ficha nao encontrada.' })
   }
 
-  // Helper local para codificação Base64
-  var toBase64Local = function (str) {
-    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    var bytes = []
-    for (var i = 0; i < str.length; i++) {
-      var c = str.charCodeAt(i)
-      if (c < 128) {
-        bytes.push(c)
-      } else if (c < 2048) {
-        bytes.push((c >> 6) | 192)
-        bytes.push((c & 63) | 128)
-      } else {
-        bytes.push((c >> 12) | 224)
-        bytes.push(((c >> 6) & 63) | 128)
-        bytes.push((c & 63) | 128)
-      }
-    }
-    var output = ''
-    var l = bytes.length
-    for (var j = 0; j < l; j += 3) {
-      var b0 = bytes[j]
-      var b1 = j + 1 < l ? bytes[j + 1] : 0
-      var b2 = j + 2 < l ? bytes[j + 2] : 0
-      output += chars.charAt(b0 >> 2)
-      output += chars.charAt(((b0 & 3) << 4) | (b1 >> 4))
-      output += j + 1 < l ? chars.charAt(((b1 & 15) << 2) | (b2 >> 6)) : '='
-      output += j + 2 < l ? chars.charAt(b2 & 63) : '='
-    }
-    return output
-  }
-
-  // Helper local para formatação de data de Brasília
-  var formatBr = function (isoStr) {
-    if (!isoStr) return 'Data nao informada'
-    try {
-      var d = new Date(isoStr)
-      var utc = d.getTime() + d.getTimezoneOffset() * 60000
-      var brDate = new Date(utc - 3 * 3600000)
-      var dia = String(brDate.getDate())
-      if (dia.length < 2) dia = '0' + dia
-      var mes = String(brDate.getMonth() + 1)
-      if (mes.length < 2) mes = '0' + mes
-      var ano = brDate.getFullYear()
-      var horas = String(brDate.getHours())
-      if (horas.length < 2) horas = '0' + horas
-      var minutos = String(brDate.getMinutes())
-      if (minutos.length < 2) minutos = '0' + minutos
-      return dia + '/' + mes + '/' + ano + ' as ' + horas + ':' + minutos + ' (horario de Brasilia)'
-    } catch (_) {
-      return isoStr
-    }
-  }
-
-  var getDataCurta = function (isoStr) {
-    try {
-      var d = isoStr ? new Date(isoStr) : new Date()
-      var utc = d.getTime() + d.getTimezoneOffset() * 60000
-      var brDate = new Date(utc - 3 * 3600000)
-      var dia = String(brDate.getDate())
-      if (dia.length < 2) dia = '0' + dia
-      var mes = String(brDate.getMonth() + 1)
-      if (mes.length < 2) mes = '0' + mes
-      return dia + '-' + mes + '-' + brDate.getFullYear()
-    } catch (_) {
-      return '31-10-2026'
-    }
-  }
-
-  var sanitizar = function (nome) {
-    if (!nome) return 'Paciente'
-    var s = nome
-      .replace(/[áàâãä]/gi, 'a')
-      .replace(/[éèêë]/gi, 'e')
-      .replace(/[íìîï]/gi, 'i')
-      .replace(/[óòôõö]/gi, 'o')
-      .replace(/[úùûü]/gi, 'u')
-      .replace(/[ç]/gi, 'c')
-      .replace(/[ñ]/gi, 'n')
-    return s
-      .replace(/[^a-zA-Z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-  }
-
-  var normAscii = function (str) {
-    if (!str) return ''
-    return String(str)
-      .replace(/[áàâãä]/gi, 'a')
-      .replace(/[éèêë]/gi, 'e')
-      .replace(/[íìîï]/gi, 'i')
-      .replace(/[óòôõö]/gi, 'o')
-      .replace(/[úùûü]/gi, 'u')
-      .replace(/[ç]/gi, 'c')
-      .replace(/[ñ]/gi, 'n')
-      .replace(/[ÁÀÂÃÄ]/g, 'A')
-      .replace(/[ÉÈÊË]/g, 'E')
-      .replace(/[ÍÌÎÏ]/g, 'I')
-      .replace(/[ÓÒÔÕÖ]/g, 'O')
-      .replace(/[ÚÙÛÜ]/g, 'U')
-      .replace(/[Ç]/g, 'C')
-      .replace(/[Ñ]/g, 'N')
-  }
-
-  var escPdf = function (text) {
-    if (!text) return ''
-    return String(text).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
-  }
-
   // Configs da clínica
   var settingsRec = null
   try {
@@ -500,11 +398,11 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
   } catch (_) {}
 
   var clinicName = 'Andresa Souza Clinic'
-  var techResp = 'Dra. Andresa Souza'
-  var profReg = 'CRBM 12345'
+  var techResp = 'Andresa Souza — CREFITO-13 000000-F'
+  var profReg = 'CREFITO-13 000000-F'
   var clinicAddr = 'Jardins, Aracaju - SE'
-  var clinicPhone = '79998091314'
-  var clinicEmail = 'gihobaicn@hotmail.com'
+  var clinicPhone = '(79) 99980-9134'
+  var clinicEmail = 'andresasouzaclinic@gmail.com'
   var senderEmail = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
 
   if (settingsRec) {
@@ -527,284 +425,1274 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
   var patientName = formRecord.getString('patient_name') || 'Paciente'
   var fType = formRecord.getString('form_type') || 'geral'
   var formTypeLabels = {
-    geral: 'Anamnese Geral',
-    labios: 'Labios & Micropigmentacao Labial',
-    botox: 'Toxina Botulinica (Botox)',
+    geral: 'Anamnese Estética Geral',
+    labios: 'Lábios, Micropigmentação & Revitalização Labial',
+    botox: 'Toxina Botulínica (Botox)',
   }
   var fTypeLabel = formTypeLabels[fType] || fType
 
-  // Monta PDF
-  var patientCpf = formRecord.getString('patient_cpf') || 'Nao informado'
-  var patientPhone = formRecord.getString('patient_phone') || 'Nao informado'
-  var patientBirth = formRecord.getString('patient_birth_date') || 'Nao informado'
-  var patientRg = formRecord.getString('patient_rg') || 'Nao informado'
-  var patientProf = formRecord.getString('patient_profession') || 'Nao informado'
-  var patientEmerg = formRecord.getString('patient_emergency_contact') || 'Nao informado'
-  var patientAddr = formRecord.getString('patient_address') || 'Nao informado'
+  // --- GERADOR DE PDF INLINE AUTOCONTIDO ---
+  var pdfResult = (function (rec, settings) {
+    var base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    var base64Lookup = new Uint8Array(256)
+    for (var bIdx = 0; bIdx < base64Chars.length; bIdx++) {
+      base64Lookup[base64Chars.charCodeAt(bIdx)] = bIdx
+    }
 
-  var signedAt = formatBr(formRecord.getString('signed_at') || formRecord.getString('created'))
-  var ipOrigem = formRecord.getString('ip_address') || 'Nao informado'
-  var userAgent = formRecord.getString('user_agent') || 'Navegador Web/Mobile'
-  var docHash = formRecord.getString('document_hash') || 'SHA-256 REGISTRADO'
-  var termTitle =
-    formRecord.getString('accepted_term_title') || 'Termo de Consentimento - ' + fTypeLabel
-  var sigData = formRecord.getString('signature_data') || ''
+    function decodeBase64ToBytes(base64Str) {
+      var clean = base64Str.replace(/[^A-Za-z0-9+/=]/g, '')
+      var len = clean.length
+      var placeHolders = clean.charAt(len - 1) === '=' ? (clean.charAt(len - 2) === '=' ? 2 : 1) : 0
+      var byteLen = Math.floor((len * 3) / 4) - placeHolders
+      var bytes = new Uint8Array(byteLen)
+      var curByte = 0
+      for (var i = 0; i < len; i += 4) {
+        var enc1 = base64Lookup[clean.charCodeAt(i)]
+        var enc2 = base64Lookup[clean.charCodeAt(i + 1)]
+        var enc3 = base64Lookup[clean.charCodeAt(i + 2)]
+        var enc4 = base64Lookup[clean.charCodeAt(i + 3)]
 
-  var lines = []
-  lines.push({ size: 16, bold: true, color: '0.51 0.09 0.26', text: normAscii(clinicName) })
-  lines.push({
-    size: 10,
-    bold: false,
-    color: '0.4 0.4 0.4',
-    text: 'Prontuario Digital & Ficha de Anamnese Oficial',
-  })
-  lines.push({
-    size: 10,
-    bold: false,
-    color: '0.4 0.4 0.4',
-    text: 'Procedimento: ' + normAscii(fTypeLabel),
-  })
-  lines.push({
-    size: 8,
-    bold: false,
-    color: '0.7 0.7 0.7',
-    text: '_____________________________________________________________________________________',
-  })
-  lines.push({ size: 6, text: '' })
+        bytes[curByte++] = (enc1 << 2) | (enc2 >> 4)
+        if (curByte < byteLen) bytes[curByte++] = ((enc2 & 15) << 4) | (enc3 >> 2)
+        if (curByte < byteLen) bytes[curByte++] = ((enc3 & 3) << 6) | enc4
+      }
+      return bytes
+    }
 
-  lines.push({
-    size: 12,
-    bold: true,
-    color: '0.51 0.09 0.26',
-    text: '1. DADOS CADASTRAIS DO PACIENTE',
-  })
-  lines.push({
-    size: 9,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'Nome: ' + normAscii(patientName) + '   |   CPF: ' + normAscii(patientCpf),
-  })
-  lines.push({
-    size: 9,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'E-mail: ' + normAscii(patientEmail) + '   |   Telefone: ' + normAscii(patientPhone),
-  })
-  lines.push({
-    size: 9,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'Nascimento: ' + normAscii(patientBirth) + '   |   RG: ' + normAscii(patientRg),
-  })
-  lines.push({
-    size: 9,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'Profissao: ' + normAscii(patientProf) + '   |   Emergencia: ' + normAscii(patientEmerg),
-  })
-  lines.push({
-    size: 9,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'Endereco: ' + normAscii(patientAddr),
-  })
-  lines.push({ size: 6, text: '' })
+    function encodeBinaryStringToBase64(binStr) {
+      var output = ''
+      var len = binStr.length
+      for (var j = 0; j < len; j += 3) {
+        var b0 = binStr.charCodeAt(j) & 0xff
+        var b1 = j + 1 < len ? binStr.charCodeAt(j + 1) & 0xff : 0
+        var b2 = j + 2 < len ? binStr.charCodeAt(j + 2) & 0xff : 0
+        output += base64Chars.charAt(b0 >> 2)
+        output += base64Chars.charAt(((b0 & 3) << 4) | (b1 >> 4))
+        output += j + 1 < len ? base64Chars.charAt(((b1 & 15) << 2) | (b2 >> 6)) : '='
+        output += j + 2 < len ? base64Chars.charAt(b2 & 63) : '='
+      }
+      return output
+    }
 
-  lines.push({
-    size: 12,
-    bold: true,
-    color: '0.51 0.09 0.26',
-    text: '2. QUESTIONARIO DE ANAMNESE E SAUDE',
-  })
-  try {
-    var rawAnswers = formRecord.getString('answers')
-    if (rawAnswers) {
-      var answersObj = JSON.parse(rawAnswers)
-      var aKeys = Object.keys(answersObj)
-      for (var k = 0; k < aKeys.length; k++) {
-        var aKey = aKeys[k]
-        var val = answersObj[aKey]
-        var label = aKey.replace(/_/g, ' ').toUpperCase()
-        var valStr = Array.isArray(val) ? val.join(', ') : String(val)
-        lines.push({
-          size: 8,
-          bold: false,
-          color: '0.2 0.2 0.2',
-          text: '- ' + normAscii(label) + ': ' + normAscii(valStr),
-        })
+    function tinfUncompress(source) {
+      var TINF_OK = 0
+      var sltree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+      var sdtree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+      var length_bits = new Uint8Array(30)
+      var length_base = new Uint16Array(30)
+      var dist_bits = new Uint8Array(30)
+      var dist_base = new Uint16Array(30)
+      var clcidx = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+
+      function tinf_build_bits_base(bits, base, delta, first) {
+        var i, sum
+        for (i = 0; i < delta; ++i) bits[i] = 0
+        for (i = 0; i < 30 - delta; ++i) bits[i + delta] = Math.floor(i / delta)
+        for (sum = first, i = 0; i < 30; ++i) {
+          base[i] = sum
+          sum += 1 << bits[i]
+        }
+      }
+
+      function tinf_build_fixed_trees(lt, dt) {
+        var i
+        for (i = 0; i < 7; ++i) lt.table[i] = 0
+        lt.table[7] = 24
+        lt.table[8] = 152
+        lt.table[9] = 112
+        for (i = 0; i < 24; ++i) lt.trans[i] = 256 + i
+        for (i = 0; i < 144; ++i) lt.trans[24 + i] = i
+        for (i = 0; i < 8; ++i) lt.trans[24 + 144 + i] = 280 + i
+        for (i = 0; i < 112; ++i) lt.trans[24 + 144 + 8 + i] = 144 + i
+        for (i = 0; i < 5; ++i) dt.table[i] = 0
+        dt.table[5] = 32
+        for (i = 0; i < 32; ++i) dt.trans[i] = i
+      }
+
+      tinf_build_fixed_trees(sltree, sdtree)
+      tinf_build_bits_base(length_bits, length_base, 4, 3)
+      tinf_build_bits_base(dist_bits, dist_base, 2, 1)
+      length_bits[28] = 0
+      length_base[28] = 258
+
+      function tinf_build_tree(t, lengths, off, num) {
+        var offs = new Uint16Array(16)
+        var i, sum
+        for (i = 0; i < 16; ++i) t.table[i] = 0
+        for (i = 0; i < num; ++i) t.table[lengths[off + i]]++
+        t.table[0] = 0
+        for (sum = 0, i = 0; i < 16; ++i) {
+          offs[i] = sum
+          sum += t.table[i]
+        }
+        for (i = 0; i < num; ++i) {
+          if (lengths[off + i]) t.trans[offs[lengths[off + i]]++] = i
+        }
+      }
+
+      var d = {
+        source: source,
+        sourceIndex: 0,
+        tag: 0,
+        bitcount: 0,
+        dest: new Uint8Array(source.length * 8 + 65536),
+        destLen: 0,
+        ltree: { table: new Uint16Array(16), trans: new Uint16Array(288) },
+        dtree: { table: new Uint16Array(16), trans: new Uint16Array(288) },
+      }
+
+      function tinf_getbit(d) {
+        if (!d.bitcount--) {
+          d.tag = d.source[d.sourceIndex++]
+          d.bitcount = 7
+        }
+        var bit = d.tag & 1
+        d.tag >>>= 1
+        return bit
+      }
+
+      function tinf_read_bits(d, num, base) {
+        if (!num) return base
+        while (d.bitcount < 24) {
+          d.tag |= d.source[d.sourceIndex++] << d.bitcount
+          d.bitcount += 8
+        }
+        var val = d.tag & (0xffff >>> (16 - num))
+        d.tag >>>= num
+        d.bitcount -= num
+        return val + base
+      }
+
+      function tinf_decode_symbol(d, t) {
+        while (d.bitcount < 24) {
+          d.tag |= d.source[d.sourceIndex++] << d.bitcount
+          d.bitcount += 8
+        }
+        var sum = 0,
+          cur = 0,
+          len = 0
+        var tag = d.tag
+        do {
+          cur = 2 * cur + (tag & 1)
+          tag >>>= 1
+          ++len
+          sum += t.table[len]
+          cur -= t.table[len]
+        } while (cur >= 0)
+        d.tag = tag
+        d.bitcount -= len
+        return t.trans[sum + cur]
+      }
+
+      function tinf_decode_trees(d, lt, dt) {
+        var hlit = tinf_read_bits(d, 5, 257)
+        var hdist = tinf_read_bits(d, 5, 1)
+        var hclen = tinf_read_bits(d, 4, 4)
+        var lengths = new Uint8Array(288 + 32)
+        var code_tree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+        var i, num, length
+
+        for (i = 0; i < 19; ++i) lengths[i] = 0
+        for (i = 0; i < hclen; ++i) {
+          lengths[clcidx[i]] = tinf_read_bits(d, 3, 0)
+        }
+        tinf_build_tree(code_tree, lengths, 0, 19)
+
+        for (num = 0; num < hlit + hdist; ) {
+          var sym = tinf_decode_symbol(d, code_tree)
+          switch (sym) {
+            case 16:
+              var prev = lengths[num - 1]
+              for (length = tinf_read_bits(d, 2, 3); length; --length) lengths[num++] = prev
+              break
+            case 17:
+              for (length = tinf_read_bits(d, 3, 3); length; --length) lengths[num++] = 0
+              break
+            case 18:
+              for (length = tinf_read_bits(d, 7, 11); length; --length) lengths[num++] = 0
+              break
+            default:
+              lengths[num++] = sym
+              break
+          }
+        }
+        tinf_build_tree(lt, lengths, 0, hlit)
+        tinf_build_tree(dt, lengths, hlit, hdist)
+      }
+
+      function tinf_inflate_block_data(d, lt, dt) {
+        while (1) {
+          var sym = tinf_decode_symbol(d, lt)
+          if (sym === 256) return TINF_OK
+          if (sym < 256) {
+            if (d.destLen >= d.dest.length) {
+              var bigger = new Uint8Array(d.dest.length * 2)
+              bigger.set(d.dest)
+              d.dest = bigger
+            }
+            d.dest[d.destLen++] = sym
+          } else {
+            sym -= 257
+            var length = tinf_read_bits(d, length_bits[sym], length_base[sym])
+            var dist = tinf_decode_symbol(d, dt)
+            var offs = d.destLen - tinf_read_bits(d, dist_bits[dist], dist_base[dist])
+            if (d.destLen + length >= d.dest.length) {
+              var bigger2 = new Uint8Array(Math.max(d.dest.length * 2, d.destLen + length + 65536))
+              bigger2.set(d.dest)
+              d.dest = bigger2
+            }
+            for (var i = offs; i < offs + length; ++i) {
+              d.dest[d.destLen++] = d.dest[i]
+            }
+          }
+        }
+      }
+
+      function tinf_inflate_uncompressed_block(d) {
+        while (d.bitcount > 8) {
+          d.sourceIndex--
+          d.bitcount -= 8
+        }
+        var length = d.source[d.sourceIndex + 1] * 256 + d.source[d.sourceIndex]
+        d.sourceIndex += 4
+        if (d.destLen + length >= d.dest.length) {
+          var bigger = new Uint8Array(d.dest.length + length + 65536)
+          bigger.set(d.dest)
+          d.dest = bigger
+        }
+        for (var i = length; i; --i) d.dest[d.destLen++] = d.source[d.sourceIndex++]
+        d.bitcount = 0
+        return TINF_OK
+      }
+
+      var bfinal
+      do {
+        bfinal = tinf_getbit(d)
+        var btype = tinf_read_bits(d, 2, 0)
+        switch (btype) {
+          case 0:
+            tinf_inflate_uncompressed_block(d)
+            break
+          case 1:
+            tinf_inflate_block_data(d, sltree, sdtree)
+            break
+          case 2:
+            tinf_decode_trees(d, d.ltree, d.dtree)
+            tinf_inflate_block_data(d, d.ltree, d.dtree)
+            break
+          default:
+            throw new Error('Data error inflate')
+        }
+      } while (!bfinal)
+
+      return d.dest.subarray(0, d.destLen)
+    }
+
+    // Processamento da imagem de assinatura
+    var signatureImageObj = null
+    var rawSigData = rec.getString('signature_data') || ''
+
+    if (rawSigData && rawSigData.indexOf('data:image/') === 0) {
+      try {
+        var commaIdx = rawSigData.indexOf(',')
+        var headerPart = rawSigData.substring(0, commaIdx)
+        var b64Data = rawSigData.substring(commaIdx + 1)
+        var imgBytes = decodeBase64ToBytes(b64Data)
+
+        if (headerPart.indexOf('image/jpeg') !== -1 || headerPart.indexOf('image/jpg') !== -1) {
+          var jW = 600
+          var jH = 200
+          for (var p = 0; p < imgBytes.length - 8; p++) {
+            if (imgBytes[p] === 0xff && (imgBytes[p + 1] === 0xc0 || imgBytes[p + 1] === 0xc2)) {
+              jH = (imgBytes[p + 5] << 8) | imgBytes[p + 6]
+              jW = (imgBytes[p + 7] << 8) | imgBytes[p + 8]
+              break
+            }
+          }
+          var binJpeg = ''
+          for (var ji = 0; ji < imgBytes.length; ji++) {
+            binJpeg += String.fromCharCode(imgBytes[ji])
+          }
+          signatureImageObj = {
+            width: jW,
+            height: jH,
+            colorSpace: '/DeviceRGB',
+            bits: 8,
+            filter: '/DCTDecode',
+            stream: binJpeg,
+          }
+        } else if (headerPart.indexOf('image/png') !== -1) {
+          if (
+            imgBytes.length > 24 &&
+            imgBytes[0] === 0x89 &&
+            imgBytes[1] === 0x50 &&
+            imgBytes[2] === 0x4e &&
+            imgBytes[3] === 0x47
+          ) {
+            var pW =
+              (imgBytes[16] << 24) | (imgBytes[17] << 16) | (imgBytes[18] << 8) | imgBytes[19]
+            var pH =
+              (imgBytes[20] << 24) | (imgBytes[21] << 16) | (imgBytes[22] << 8) | imgBytes[23]
+            var bitDepth = imgBytes[24]
+            var colorType = imgBytes[25]
+            var interlace = imgBytes[28]
+
+            var idatParts = []
+            var offset = 8
+            while (offset < imgBytes.length - 8) {
+              var cLen =
+                (imgBytes[offset] << 24) |
+                (imgBytes[offset + 1] << 16) |
+                (imgBytes[offset + 2] << 8) |
+                imgBytes[offset + 3]
+              var cType = String.fromCharCode(
+                imgBytes[offset + 4],
+                imgBytes[offset + 5],
+                imgBytes[offset + 6],
+                imgBytes[offset + 7],
+              )
+              if (cType === 'IDAT') {
+                idatParts.push(imgBytes.subarray(offset + 8, offset + 8 + cLen))
+              }
+              offset += 12 + cLen
+              if (cType === 'IEND') break
+            }
+
+            var totalIdatLen = 0
+            for (var ip = 0; ip < idatParts.length; ip++) totalIdatLen += idatParts[ip].length
+            var idatBytes = new Uint8Array(totalIdatLen)
+            var curIdatOff = 0
+            for (var ip2 = 0; ip2 < idatParts.length; ip2++) {
+              idatBytes.set(idatParts[ip2], curIdatOff)
+              curIdatOff += idatParts[ip2].length
+            }
+
+            var binIdat = ''
+            for (var bi = 0; bi < idatBytes.length; bi++) {
+              binIdat += String.fromCharCode(idatBytes[bi])
+            }
+
+            if (colorType === 2 && interlace === 0 && bitDepth === 8) {
+              signatureImageObj = {
+                width: pW,
+                height: pH,
+                colorSpace: '/DeviceRGB',
+                bits: 8,
+                filter: '/FlateDecode',
+                decodeParms:
+                  '<< /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ' + pW + ' >>',
+                stream: binIdat,
+              }
+            } else if (colorType === 0 && interlace === 0 && bitDepth === 8) {
+              signatureImageObj = {
+                width: pW,
+                height: pH,
+                colorSpace: '/DeviceGray',
+                bits: 8,
+                filter: '/FlateDecode',
+                decodeParms:
+                  '<< /Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns ' + pW + ' >>',
+                stream: binIdat,
+              }
+            } else if (colorType === 6 || colorType === 3 || colorType === 2) {
+              try {
+                var decompressed = tinfUncompress(idatBytes.subarray(2))
+                if (decompressed && decompressed.length > 0) {
+                  var bytesPerPix = colorType === 6 ? 4 : colorType === 2 ? 3 : 1
+                  var scanlineLen = pW * bytesPerPix
+                  var rawRgbBytes = []
+
+                  var prevScanline = new Uint8Array(scanlineLen)
+                  var decOff = 0
+
+                  for (var row = 0; row < pH; row++) {
+                    if (decOff >= decompressed.length) break
+                    var filterType = decompressed[decOff++]
+                    var curScanline = new Uint8Array(scanlineLen)
+
+                    for (var col = 0; col < scanlineLen; col++) {
+                      var rawByte = decompressed[decOff++]
+                      var a = col >= bytesPerPix ? curScanline[col - bytesPerPix] : 0
+                      var b = prevScanline[col]
+                      var c = col >= bytesPerPix ? prevScanline[col - bytesPerPix] : 0
+
+                      var val = rawByte
+                      if (filterType === 1) {
+                        val = (rawByte + a) & 0xff
+                      } else if (filterType === 2) {
+                        val = (rawByte + b) & 0xff
+                      } else if (filterType === 3) {
+                        val = (rawByte + Math.floor((a + b) / 2)) & 0xff
+                      } else if (filterType === 4) {
+                        var pP = a + b - c
+                        var pa = Math.abs(pP - a)
+                        var pb = Math.abs(pP - b)
+                        var pc = Math.abs(pP - c)
+                        var pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+                        val = (rawByte + pr) & 0xff
+                      }
+                      curScanline[col] = val
+                    }
+
+                    prevScanline = curScanline
+
+                    if (colorType === 6) {
+                      for (var px = 0; px < pW; px++) {
+                        var r = curScanline[px * 4]
+                        var g = curScanline[px * 4 + 1]
+                        var bl = curScanline[px * 4 + 2]
+                        var al = curScanline[px * 4 + 3] / 255.0
+                        var outR = Math.round(r * al + 255 * (1 - al))
+                        var outG = Math.round(g * al + 255 * (1 - al))
+                        var outB = Math.round(bl * al + 255 * (1 - al))
+                        rawRgbBytes.push(outR, outG, outB)
+                      }
+                    } else if (colorType === 2) {
+                      for (var px2 = 0; px2 < curScanline.length; px2++) {
+                        rawRgbBytes.push(curScanline[px2])
+                      }
+                    }
+                  }
+
+                  if (rawRgbBytes.length === pW * pH * 3) {
+                    var rgbBin = ''
+                    for (var rbi = 0; rbi < rawRgbBytes.length; rbi++) {
+                      rgbBin += String.fromCharCode(rawRgbBytes[rbi])
+                    }
+                    signatureImageObj = {
+                      width: pW,
+                      height: pH,
+                      colorSpace: '/DeviceRGB',
+                      bits: 8,
+                      filter: null,
+                      stream: rgbBin,
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    function toWinAnsiByte(charStr) {
+      var c = charStr.charCodeAt(0)
+      if (c < 128) return c
+      var map = {
+        0x20ac: 0x80,
+        0x201a: 0x82,
+        0x0192: 0x83,
+        0x201e: 0x84,
+        0x2026: 0x85,
+        0x2020: 0x86,
+        0x2021: 0x87,
+        0x02c6: 0x88,
+        0x2030: 0x89,
+        0x0160: 0x8a,
+        0x2039: 0x8b,
+        0x0152: 0x8c,
+        0x017d: 0x8e,
+        0x2018: 0x91,
+        0x2019: 0x92,
+        0x201c: 0x93,
+        0x201d: 0x94,
+        0x2022: 0x95,
+        0x2013: 0x96,
+        0x2014: 0x97,
+        0x02dc: 0x98,
+        0x2122: 0x99,
+        0x0161: 0x9a,
+        0x203a: 0x9b,
+        0x0153: 0x9c,
+        0x017e: 0x9e,
+        0x0178: 0x9f,
+      }
+      if (map[c]) return map[c]
+      if (c >= 160 && c <= 255) return c
+      return 63
+    }
+
+    function escPdfWinAnsi(text) {
+      if (!text) return ''
+      var out = ''
+      var s = String(text)
+      for (var i = 0; i < s.length; i++) {
+        var ch = s.charAt(i)
+        var b = toWinAnsiByte(ch)
+        if (b === 92) {
+          out += '\\\\'
+        } else if (b === 40) {
+          out += '\\('
+        } else if (b === 41) {
+          out += '\\)'
+        } else if (b >= 32 && b <= 126) {
+          out += ch
+        } else {
+          var oct = b.toString(8)
+          while (oct.length < 3) oct = '0' + oct
+          out += '\\' + oct
+        }
+      }
+      return out
+    }
+
+    function estimateCharWidth(ch, fontSize) {
+      var c = ch.charCodeAt(0)
+      var ratio = 0.52
+      if ('ijlI1.:;,|!/\\'.indexOf(ch) !== -1) ratio = 0.28
+      else if ('mwMWOQ@%'.indexOf(ch) !== -1) ratio = 0.8
+      else if ('frt -()[]{}'.indexOf(ch) !== -1) ratio = 0.35
+      else if (c >= 65 && c <= 90) ratio = 0.65
+      return ratio * fontSize
+    }
+
+    function measureTextWidth(text, fontSize) {
+      var w = 0
+      var s = String(text || '')
+      for (var i = 0; i < s.length; i++) {
+        w += estimateCharWidth(s.charAt(i), fontSize)
+      }
+      return w
+    }
+
+    function wrapText(text, maxPts, fontSize) {
+      if (!text) return []
+      var words = String(text).split(' ')
+      var lines = []
+      var curLine = ''
+
+      for (var i = 0; i < words.length; i++) {
+        var w = words[i]
+        var test = curLine ? curLine + ' ' + w : w
+        if (measureTextWidth(test, fontSize) <= maxPts) {
+          curLine = test
+        } else {
+          if (curLine) lines.push(curLine)
+          curLine = w
+        }
+      }
+      if (curLine) lines.push(curLine)
+      return lines
+    }
+
+    function formatBrDate(isoStr) {
+      if (!isoStr) return 'Não informada'
+      try {
+        var d = new Date(isoStr)
+        var utc = d.getTime() + d.getTimezoneOffset() * 60000
+        var brDate = new Date(utc - 3 * 3600000)
+        var dia = String(brDate.getDate())
+        if (dia.length < 2) dia = '0' + dia
+        var mes = String(brDate.getMonth() + 1)
+        if (mes.length < 2) mes = '0' + mes
+        var ano = brDate.getFullYear()
+        var horas = String(brDate.getHours())
+        if (horas.length < 2) horas = '0' + horas
+        var minutos = String(brDate.getMinutes())
+        if (minutos.length < 2) minutos = '0' + minutos
+        return (
+          dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos + ' (horário de Brasília)'
+        )
+      } catch (_) {
+        return isoStr
       }
     }
-  } catch (_) {
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.4 0.4 0.4',
-      text: 'Respostas arquivadas no sistema.',
-    })
-  }
-  lines.push({ size: 6, text: '' })
 
-  lines.push({
-    size: 12,
-    bold: true,
-    color: '0.51 0.09 0.26',
-    text: '3. TERMO DE CONSENTIMENTO LIVRE E ESCLARECIDO',
-  })
-  lines.push({ size: 9, bold: true, color: '0.2 0.2 0.2', text: normAscii(termTitle) })
-  lines.push({
-    size: 8,
-    bold: false,
-    color: '0.3 0.3 0.3',
-    text: 'Declaracao de consentimento integralmente lida, confirmada e assinada eletronicamente.',
-  })
-  lines.push({ size: 6, text: '' })
-
-  lines.push({
-    size: 11,
-    bold: true,
-    color: '0.51 0.09 0.26',
-    text: '4. CERTIFICADO DE ASSINATURA ELETRONICA',
-  })
-  lines.push({
-    size: 8,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'Data e Hora: ' + normAscii(signedAt),
-  })
-  lines.push({
-    size: 8,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'IP de Origem Real: ' + normAscii(ipOrigem),
-  })
-  lines.push({
-    size: 8,
-    bold: false,
-    color: '0.1 0.1 0.1',
-    text: 'Hash SHA-256 de Integridade: ' + normAscii(docHash),
-  })
-  lines.push({
-    size: 7,
-    bold: false,
-    color: '0.4 0.4 0.4',
-    text: 'Dispositivo: ' + normAscii(userAgent.substring(0, 100)),
-  })
-  lines.push({
-    size: 8,
-    bold: true,
-    color: '0.1 0.1 0.1',
-    text: 'Status: ASSINATURA ELETRONICA VALIDA E CONCLUIDA',
-  })
-  lines.push({
-    size: 8,
-    bold: false,
-    color: '0.2 0.2 0.2',
-    text: 'Signatario: ' + normAscii(patientName),
-  })
-  lines.push({
-    size: 8,
-    bold: false,
-    color: '0.7 0.7 0.7',
-    text: '_____________________________________________________________________________________',
-  })
-  lines.push({
-    size: 7,
-    bold: false,
-    color: '0.4 0.4 0.4',
-    text:
-      normAscii(clinicName) +
-      ' | Resp. Tecnica: ' +
-      normAscii(techResp) +
-      ' (' +
-      normAscii(profReg) +
-      ')',
-  })
-  lines.push({
-    size: 7,
-    bold: false,
-    color: '0.4 0.4 0.4',
-    text: 'Endereco: ' + normAscii(clinicAddr) + ' | Telefone: ' + normAscii(clinicPhone),
-  })
-
-  var streamContent = 'q\n'
-  var currentY = 780
-  for (var li = 0; li < lines.length; li++) {
-    var ln = lines[li]
-    if (ln.text === '') {
-      currentY -= ln.size || 6
-      continue
+    function formatShortDate(isoStr) {
+      try {
+        var d = isoStr ? new Date(isoStr) : new Date()
+        var utc = d.getTime() + d.getTimezoneOffset() * 60000
+        var brDate = new Date(utc - 3 * 3600000)
+        var dia = String(brDate.getDate())
+        if (dia.length < 2) dia = '0' + dia
+        var mes = String(brDate.getMonth() + 1)
+        if (mes.length < 2) mes = '0' + mes
+        return dia + '/' + mes + '/' + brDate.getFullYear()
+      } catch (_) {
+        return '31/10/2026'
+      }
     }
-    var fontName = ln.bold ? '/F2' : '/F1'
-    var fontSize = ln.size || 9
-    var color = ln.color || '0 0 0'
 
-    streamContent +=
-      'BT\n' +
-      color +
-      ' rg\n' +
-      fontName +
-      ' ' +
-      fontSize +
-      ' Tf\n1 0 0 1 40 ' +
-      currentY +
-      ' Tm\n(' +
-      escPdf(ln.text) +
-      ') Tj\nET\n'
-    currentY -= Math.round(fontSize * 1.35) + 3
-    if (currentY < 40) break
+    function formatBirthDateBR(dateStr) {
+      if (!dateStr || dateStr === 'Não informado') return 'Não informado'
+      try {
+        var clean = String(dateStr).trim().split('T')[0]
+        var match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+        if (match) {
+          return match[3] + '/' + match[2] + '/' + match[1]
+        }
+        return dateStr
+      } catch (_) {
+        return dateStr
+      }
+    }
+
+    var patientName = rec.getString('patient_name') || 'Paciente'
+    var patientCpf = rec.getString('patient_cpf') || 'Não informado'
+    var patientEmail = rec.getString('patient_email') || 'Não informado'
+    var patientPhone = rec.getString('patient_phone') || 'Não informado'
+    var patientBirth = formatBirthDateBR(rec.getString('patient_birth_date'))
+    var patientRg = rec.getString('patient_rg') || 'Não informado'
+    var patientProf = rec.getString('patient_profession') || 'Não informado'
+    var patientEmerg = rec.getString('patient_emergency_contact') || 'Não informado'
+    var patientAddr = rec.getString('patient_address') || 'Não informado'
+
+    var fType = rec.getString('form_type') || 'geral'
+    var formTypeLabels = {
+      geral: 'Anamnese Estética Geral',
+      labios: 'Lábios, Micropigmentação & Revitalização Labial',
+      botox: 'Toxina Botulínica (Botox)',
+    }
+    var fTypeLabel = formTypeLabels[fType] || fType
+
+    var signedAt = formatBrDate(rec.getString('signed_at') || rec.getString('created'))
+    var signedDateShort = formatShortDate(rec.getString('signed_at') || rec.getString('created'))
+    var ipOrigem = rec.getString('ip_address') || 'Não informado'
+    var userAgent = rec.getString('user_agent') || 'Navegador Web/Mobile'
+    var docHash = rec.getString('document_hash') || 'SHA-256 REGISTRADO'
+    var termTitle = rec.getString('accepted_term_title') || 'Termo de Consentimento - ' + fTypeLabel
+    var termText = rec.getString('accepted_term_text') || ''
+
+    var PAGE_WIDTH = 595.28
+    var PAGE_HEIGHT = 841.89
+    var MARGIN_X = 56.7
+    var CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN_X
+    var HEADER_TOP = PAGE_HEIGHT - 38
+    var CONTENT_TOP = PAGE_HEIGHT - 80
+    var CONTENT_BOTTOM = 65
+
+    var pages = []
+    var curPage = { commands: [] }
+    var curY = CONTENT_TOP
+
+    function newPage() {
+      pages.push(curPage)
+      curPage = { commands: [] }
+      curY = CONTENT_TOP
+    }
+
+    function ensureSpace(ptsNeeded) {
+      if (curY - ptsNeeded < CONTENT_BOTTOM) {
+        newPage()
+      }
+    }
+
+    function drawSectionTitle(titleText) {
+      ensureSpace(32)
+      curY -= 6
+      curPage.commands.push(
+        'q 0.514 0.094 0.263 rg 1 w ' +
+          MARGIN_X +
+          ' ' +
+          (curY - 18) +
+          ' ' +
+          CONTENT_WIDTH +
+          ' 0.5 re f Q',
+      )
+      curPage.commands.push(
+        'BT /F2 12 Tf 0.514 0.094 0.263 rg ' +
+          MARGIN_X +
+          ' ' +
+          (curY - 12) +
+          ' Td (' +
+          escPdfWinAnsi(titleText) +
+          ') Tj ET',
+      )
+      curY -= 26
+    }
+
+    function drawTwoColumnTable(rows, col1Width, col2Width) {
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r]
+        var label = row.label || ''
+        var val = row.value || ''
+        var isAlt = r % 2 === 1
+
+        var labelLines = wrapText(label, col1Width - 14, 9)
+        var valLines = wrapText(val, col2Width - 14, 9)
+        var numLines = Math.max(labelLines.length, valLines.length, 1)
+        var rowH = numLines * 13 + 8
+
+        ensureSpace(rowH + 2)
+
+        if (isAlt) {
+          curPage.commands.push(
+            'q 0.965 0.972 0.980 rg ' +
+              MARGIN_X +
+              ' ' +
+              (curY - rowH) +
+              ' ' +
+              CONTENT_WIDTH +
+              ' ' +
+              rowH +
+              ' re f Q',
+          )
+        }
+
+        curPage.commands.push(
+          'q 0.88 0.90 0.93 RG 0.5 w ' +
+            MARGIN_X +
+            ' ' +
+            (curY - rowH) +
+            ' m ' +
+            (MARGIN_X + CONTENT_WIDTH) +
+            ' ' +
+            (curY - rowH) +
+            ' l S Q',
+        )
+
+        var textY = curY - 14
+        for (var l = 0; l < labelLines.length; l++) {
+          curPage.commands.push(
+            'BT /F2 9 Tf 0.18 0.23 0.32 rg ' +
+              (MARGIN_X + 6) +
+              ' ' +
+              (textY - l * 12) +
+              ' Td (' +
+              escPdfWinAnsi(labelLines[l]) +
+              ') Tj ET',
+          )
+        }
+
+        for (var v = 0; v < valLines.length; v++) {
+          curPage.commands.push(
+            'BT /F1 9 Tf 0.10 0.14 0.20 rg ' +
+              (MARGIN_X + col1Width + 6) +
+              ' ' +
+              (textY - v * 12) +
+              ' Td (' +
+              escPdfWinAnsi(valLines[v]) +
+              ') Tj ET',
+          )
+        }
+
+        curY -= rowH
+      }
+      curY -= 8
+    }
+
+    // Seção 1
+    drawSectionTitle('SEÇÃO 1 — DADOS CADASTRAIS DO PACIENTE')
+    var patientDataRows = [
+      { label: 'Nome Completo:', value: patientName },
+      { label: 'CPF:', value: patientCpf },
+      { label: 'E-mail:', value: patientEmail },
+      { label: 'Telefone / WhatsApp:', value: patientPhone },
+      { label: 'Data de Nascimento:', value: patientBirth },
+      { label: 'RG:', value: patientRg },
+      { label: 'Profissão:', value: patientProf },
+      { label: 'Contato de Emergência:', value: patientEmerg },
+      { label: 'Endereço Residencial:', value: patientAddr },
+      { label: 'Procedimento Escolhido:', value: fTypeLabel },
+    ]
+    drawTwoColumnTable(patientDataRows, 150, CONTENT_WIDTH - 150)
+
+    // Seção 2
+    drawSectionTitle('SEÇÃO 2 — QUESTIONÁRIO DE SAÚDE & ANAMNESE')
+    var questionRows = []
+    try {
+      var rawAnswers = rec.getString('answers')
+      if (rawAnswers) {
+        var answersObj = JSON.parse(rawAnswers)
+        var qLabels = {
+          alergias: 'Alergias a Medicamentos / Cosméticos',
+          cicatrizacao: 'Histórico de Cicatrização / Queloides',
+          doencas_cronicas: 'Doenças Crônicas / Autoimunes',
+          fumante: 'Tabagismo / Fumante Ativo',
+          gestante_ou_lactante: 'Gestante ou Lactante',
+          medicamentos_em_uso: 'Medicamentos de Uso Contínuo',
+          objetivo_labios: 'Objetivo com o Procedimento Labial',
+          procedimentos_anteriores: 'Procedimentos Estéticos Anteriores',
+          queixa_principal: 'Queixa Estética Principal',
+          historico_saude: 'Histórico Geral de Saúde',
+          herpes_labial: 'Histórico de Herpes Labial',
+          uso_anticoagulantes: 'Uso de Anticoagulantes / AAS',
+        }
+        var aKeys = Object.keys(answersObj)
+        for (var k = 0; k < aKeys.length; k++) {
+          var aKey = aKeys[k]
+          var qVal = answersObj[aKey]
+          var qText =
+            qLabels[aKey] ||
+            aKey.replace(/_/g, ' ').replace(/\b\w/g, function (char) {
+              return char.toUpperCase()
+            })
+          var vStr = Array.isArray(qVal) ? qVal.join(', ') : String(qVal)
+          if (typeof qVal === 'boolean') vStr = qVal ? 'Sim' : 'Não'
+          questionRows.push({ label: qText + ':', value: vStr || 'Não informado' })
+        }
+      }
+    } catch (_) {}
+
+    if (questionRows.length === 0) {
+      questionRows.push({
+        label: 'Questionário Clínico:',
+        value: 'Respostas registradas e validadas eletronicamente no prontuário.',
+      })
+    }
+    drawTwoColumnTable(questionRows, 195, CONTENT_WIDTH - 195)
+
+    // Seção 3
+    drawSectionTitle('SEÇÃO 3 — TERMO DE CONSENTIMENTO LIVRE E ESCLARECIDO')
+    ensureSpace(22)
+    curPage.commands.push(
+      'BT /F2 10 Tf 0.514 0.094 0.263 rg ' +
+        MARGIN_X +
+        ' ' +
+        (curY - 10) +
+        ' Td (' +
+        escPdfWinAnsi(termTitle) +
+        ') Tj ET',
+    )
+    curY -= 18
+
+    var clauses = []
+    if (termText) {
+      var rawParas = termText.split(/\n\s*\n|\n(?=[0-9]+\.\s+)/)
+      for (var p = 0; p < rawParas.length; p++) {
+        var pt = rawParas[p].trim()
+        if (pt) clauses.push(pt)
+      }
+    }
+    if (clauses.length === 0) {
+      clauses.push(
+        'Declaração de consentimento integralmente lida, compreendida, confirmada e aceita pelo paciente no momento da assinatura eletrônica.',
+      )
+    }
+
+    for (var c = 0; c < clauses.length; c++) {
+      var clauseText = clauses[c]
+      var lines = wrapText(clauseText, CONTENT_WIDTH, 9.5)
+      var clauseH = lines.length * 13 + 6
+
+      ensureSpace(clauseH)
+
+      for (var cl = 0; cl < lines.length; cl++) {
+        curPage.commands.push(
+          'BT /F1 9.5 Tf 0.20 0.24 0.30 rg ' +
+            MARGIN_X +
+            ' ' +
+            (curY - 11) +
+            ' Td (' +
+            escPdfWinAnsi(lines[cl]) +
+            ') Tj ET',
+        )
+        curY -= 13
+      }
+      curY -= 6
+    }
+
+    // Seção 4
+    drawSectionTitle('SEÇÃO 4 — ASSINATURA ELETRÔNICA DO PACIENTE')
+    var boxHeight = 110
+    ensureSpace(boxHeight + 50)
+
+    curPage.commands.push(
+      'q 0.988 0.950 0.972 rg 0.81 0.40 0.60 RG 1 w ' +
+        MARGIN_X +
+        ' ' +
+        (curY - boxHeight) +
+        ' ' +
+        CONTENT_WIDTH +
+        ' ' +
+        boxHeight +
+        ' re B Q',
+    )
+
+    if (signatureImageObj) {
+      var boxMaxW = 280
+      var boxMaxH = 75
+      var imgW = signatureImageObj.width
+      var imgH = signatureImageObj.height
+      var scale = Math.min(boxMaxW / imgW, boxMaxH / imgH, 1.0)
+      var finalW = Math.round(imgW * scale)
+      var finalH = Math.round(imgH * scale)
+      var imgX = MARGIN_X + (CONTENT_WIDTH - finalW) / 2
+      var imgY = curY - boxHeight + (boxHeight - finalH) / 2 + 10
+
+      curPage.commands.push(
+        'q ' + finalW + ' 0 0 ' + finalH + ' ' + imgX + ' ' + imgY + ' cm /SigImg Do Q',
+      )
+    } else {
+      curPage.commands.push(
+        'BT /F2 11 Tf 0.514 0.094 0.263 rg ' +
+          (MARGIN_X + 130) +
+          ' ' +
+          (curY - 55) +
+          ' Td (' +
+          escPdfWinAnsi('Assinatura Eletrônica Autenticada') +
+          ') Tj ET',
+      )
+    }
+
+    var lineY = curY - boxHeight + 18
+    curPage.commands.push(
+      'q 0.514 0.094 0.263 RG 1.2 w ' +
+        (MARGIN_X + 80) +
+        ' ' +
+        lineY +
+        ' m ' +
+        (MARGIN_X + CONTENT_WIDTH - 80) +
+        ' ' +
+        lineY +
+        ' l S Q',
+    )
+    curPage.commands.push(
+      'BT /F2 9.5 Tf 0.20 0.24 0.30 rg ' +
+        (MARGIN_X + 180) +
+        ' ' +
+        (lineY - 11) +
+        ' Td (' +
+        escPdfWinAnsi('Assinatura do Paciente: ' + patientName) +
+        ') Tj ET',
+    )
+    curPage.commands.push(
+      'BT /F1 8.5 Tf 0.40 0.45 0.50 rg ' +
+        (MARGIN_X + 175) +
+        ' ' +
+        (lineY - 22) +
+        ' Td (' +
+        escPdfWinAnsi('Aceite e Assinatura Registrados em: ' + signedAt) +
+        ') Tj ET',
+    )
+
+    curY -= boxHeight + 32
+
+    // Seção 5
+    drawSectionTitle('SEÇÃO 5 — REGISTRO DE AUDITORIA & INTEGRIDADE')
+    var auditRows = [
+      { label: 'Data e Hora do Aceite:', value: signedAt },
+      { label: 'IP de Origem Real:', value: ipOrigem },
+      { label: 'Dispositivo / Navegador:', value: userAgent },
+      { label: 'Hash SHA-256 de Integridade:', value: docHash },
+      {
+        label: 'Certificação de Autenticidade:',
+        value:
+          'Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.',
+      },
+    ]
+    drawTwoColumnTable(auditRows, 175, CONTENT_WIDTH - 175)
+
+    pages.push(curPage)
+    var totalPages = pages.length
+
+    var clinicN = 'Andresa Souza Clinic'
+    var tResp = 'Andresa Souza — CREFITO-13 000000-F'
+    var cAddr = 'Jardins, Aracaju - SE • Tel: (79) 99980-9134'
+
+    if (settings) {
+      try {
+        if (settings.getString('clinic_name')) clinicN = settings.getString('clinic_name')
+        if (settings.getString('technical_responsible')) {
+          tResp = settings.getString('technical_responsible')
+          if (settings.getString('professional_register')) {
+            tResp += ' — ' + settings.getString('professional_register')
+          }
+        }
+        if (settings.getString('clinic_address') || settings.getString('phone')) {
+          cAddr =
+            (settings.getString('clinic_address') || 'Jardins, Aracaju - SE') +
+            ' • Tel: ' +
+            (settings.getString('phone') || '(79) 99980-9134')
+        }
+      } catch (_) {}
+    }
+
+    var compiledPageStreams = []
+
+    for (var pIdx = 0; pIdx < totalPages; pIdx++) {
+      var pNum = pIdx + 1
+      var streamParts = []
+      streamParts.push('q\n')
+
+      // Cabeçalho
+      streamParts.push(
+        'BT /F2 13 Tf 0.514 0.094 0.263 rg ' +
+          MARGIN_X +
+          ' ' +
+          HEADER_TOP +
+          ' Td (' +
+          escPdfWinAnsi(clinicN.toUpperCase()) +
+          ') Tj ET\n',
+      )
+      var rightHeader = patientName + ' • ' + signedDateShort
+      var rightHeaderW = measureTextWidth(rightHeader, 8.5)
+      streamParts.push(
+        'BT /F1 8.5 Tf 0.35 0.40 0.48 rg ' +
+          (PAGE_WIDTH - MARGIN_X - rightHeaderW) +
+          ' ' +
+          HEADER_TOP +
+          ' Td (' +
+          escPdfWinAnsi(rightHeader) +
+          ') Tj ET\n',
+      )
+      streamParts.push(
+        'BT /F1 9 Tf 0.30 0.35 0.42 rg ' +
+          MARGIN_X +
+          ' ' +
+          (HEADER_TOP - 13) +
+          ' Td (' +
+          escPdfWinAnsi('Ficha de Anamnese e Termo de Consentimento Assinado') +
+          ') Tj ET\n',
+      )
+      streamParts.push(
+        'q 0.514 0.094 0.263 RG 1 w ' +
+          MARGIN_X +
+          ' ' +
+          (HEADER_TOP - 20) +
+          ' m ' +
+          (PAGE_WIDTH - MARGIN_X) +
+          ' ' +
+          (HEADER_TOP - 20) +
+          ' l S Q\n',
+      )
+
+      var cmds = pages[pIdx].commands
+      for (var ci = 0; ci < cmds.length; ci++) {
+        streamParts.push(cmds[ci] + '\n')
+      }
+
+      // Rodapé (todas as páginas - SEM CNPJ)
+      var footerLineY = 48
+      streamParts.push(
+        'q 0.80 0.83 0.88 RG 0.5 w ' +
+          MARGIN_X +
+          ' ' +
+          footerLineY +
+          ' m ' +
+          (PAGE_WIDTH - MARGIN_X) +
+          ' ' +
+          footerLineY +
+          ' l S Q\n',
+      )
+      streamParts.push(
+        'BT /F2 8.5 Tf 0.514 0.094 0.263 rg ' +
+          MARGIN_X +
+          ' ' +
+          (footerLineY - 11) +
+          ' Td (' +
+          escPdfWinAnsi(clinicN) +
+          ') Tj ET\n',
+      )
+      streamParts.push(
+        'BT /F1 8.5 Tf 0.35 0.40 0.48 rg ' +
+          (MARGIN_X + measureTextWidth(clinicN, 8.5) + 8) +
+          ' ' +
+          (footerLineY - 11) +
+          ' Td (' +
+          escPdfWinAnsi('• Profissional Responsável: ' + tResp) +
+          ') Tj ET\n',
+      )
+      var footerL2Left = cAddr + ' • Horário de Brasília (UTC-3)'
+      streamParts.push(
+        'BT /F1 8 Tf 0.40 0.45 0.52 rg ' +
+          MARGIN_X +
+          ' ' +
+          (footerLineY - 22) +
+          ' Td (' +
+          escPdfWinAnsi(footerL2Left) +
+          ') Tj ET\n',
+      )
+      var pageStr = 'Página ' + pNum + ' de ' + totalPages
+      var pageStrW = measureTextWidth(pageStr, 8)
+      streamParts.push(
+        'BT /F2 8 Tf 0.30 0.35 0.45 rg ' +
+          (PAGE_WIDTH - MARGIN_X - pageStrW) +
+          ' ' +
+          (footerLineY - 22) +
+          ' Td (' +
+          escPdfWinAnsi(pageStr) +
+          ') Tj ET\n',
+      )
+
+      streamParts.push('Q\n')
+      compiledPageStreams.push(streamParts.join(''))
+    }
+
+    var pdfParts = []
+    var offsets = []
+    pdfParts.push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
+
+    function addPdfObj(objContent) {
+      var curOffset = 0
+      for (var op = 0; op < pdfParts.length; op++) curOffset += pdfParts[op].length
+      offsets.push(curOffset)
+      pdfParts.push(objContent + '\n')
+    }
+
+    addPdfObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj')
+
+    var pageObjIds = []
+    var fontF1Id = 3
+    var fontF2Id = 4
+    var imageObjId = signatureImageObj ? 5 : null
+
+    var curNextId = imageObjId ? 6 : 5
+    for (var pi = 0; pi < totalPages; pi++) {
+      pageObjIds.push(curNextId)
+      curNextId += 2
+    }
+
+    var kidsArrayStr = pageObjIds
+      .map(function (id) {
+        return id + ' 0 R'
+      })
+      .join(' ')
+    addPdfObj(
+      '2 0 obj\n<< /Type /Pages /Kids [' + kidsArrayStr + '] /Count ' + totalPages + ' >>\nendobj',
+    )
+
+    addPdfObj(
+      fontF1Id +
+        ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj',
+    )
+    addPdfObj(
+      fontF2Id +
+        ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj',
+    )
+
+    if (signatureImageObj) {
+      var imgDict =
+        '<< /Type /XObject /Subtype /Image /Width ' +
+        signatureImageObj.width +
+        ' /Height ' +
+        signatureImageObj.height +
+        ' /ColorSpace ' +
+        signatureImageObj.colorSpace +
+        ' /BitsPerComponent ' +
+        signatureImageObj.bits
+      if (signatureImageObj.filter) {
+        imgDict += ' /Filter ' + signatureImageObj.filter
+      }
+      if (signatureImageObj.decodeParms) {
+        imgDict += ' /DecodeParms ' + signatureImageObj.decodeParms
+      }
+      imgDict += ' /Length ' + signatureImageObj.stream.length + ' >>'
+
+      addPdfObj(
+        imageObjId +
+          ' 0 obj\n' +
+          imgDict +
+          '\nstream\n' +
+          signatureImageObj.stream +
+          '\nendstream\nendobj',
+      )
+    }
+
+    var xobjRes = signatureImageObj ? ' /XObject << /SigImg ' + imageObjId + ' 0 R >>' : ''
+    var resourcesDict =
+      '<< /Font << /F1 ' + fontF1Id + ' 0 R /F2 ' + fontF2Id + ' 0 R >>' + xobjRes + ' >>'
+
+    for (var pBuild = 0; pBuild < totalPages; pBuild++) {
+      var pId = pageObjIds[pBuild]
+      var cId = pId + 1
+      var cStream = compiledPageStreams[pBuild]
+
+      addPdfObj(
+        pId +
+          ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' +
+          PAGE_WIDTH +
+          ' ' +
+          PAGE_HEIGHT +
+          '] /Resources ' +
+          resourcesDict +
+          ' /Contents ' +
+          cId +
+          ' 0 R >>\nendobj',
+      )
+
+      addPdfObj(
+        cId +
+          ' 0 obj\n<< /Length ' +
+          cStream.length +
+          ' >>\nstream\n' +
+          cStream +
+          'endstream\nendobj',
+      )
+    }
+
+    var xrefStart = 0
+    for (var xp = 0; xp < pdfParts.length; xp++) xrefStart += pdfParts[xp].length
+
+    var totalObjects = offsets.length
+    var xrefStr = 'xref\n0 ' + (totalObjects + 1) + '\n0000000000 65535 f \n'
+    for (var oi = 0; oi < offsets.length; oi++) {
+      var offS = String(offsets[oi])
+      while (offS.length < 10) offS = '0' + offS
+      xrefStr += offS + ' 00000 n \n'
+    }
+    xrefStr +=
+      'trailer\n<< /Size ' +
+      (totalObjects + 1) +
+      ' /Root 1 0 R >>\nstartxref\n' +
+      xrefStart +
+      '\n%%EOF\n'
+
+    pdfParts.push(xrefStr)
+
+    var rawPdf = pdfParts.join('')
+    var pdfBase64 = encodeBinaryStringToBase64(rawPdf)
+
+    return {
+      rawPdf: rawPdf,
+      base64: pdfBase64,
+      size: rawPdf.length,
+      pages: totalPages,
+    }
+  })(formRecord, settingsRec)
+
+  function formatBr(isoStr) {
+    if (!isoStr) return 'Data não informada'
+    try {
+      var d = new Date(isoStr)
+      var utc = d.getTime() + d.getTimezoneOffset() * 60000
+      var brDate = new Date(utc - 3 * 3600000)
+      var dia = String(brDate.getDate())
+      if (dia.length < 2) dia = '0' + dia
+      var mes = String(brDate.getMonth() + 1)
+      if (mes.length < 2) mes = '0' + mes
+      var ano = brDate.getFullYear()
+      var horas = String(brDate.getHours())
+      if (horas.length < 2) horas = '0' + horas
+      var minutos = String(brDate.getMinutes())
+      if (minutos.length < 2) minutos = '0' + minutos
+      return dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos + ' (horário de Brasília)'
+    } catch (_) {
+      return isoStr
+    }
   }
-  streamContent += 'Q\n'
 
-  var pdfParts = []
-  var offsets = []
-  pdfParts.push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
-
-  var addObj = function (content) {
-    var t = 0
-    for (var p = 0; p < pdfParts.length; p++) t += pdfParts[p].length
-    offsets.push(t)
-    pdfParts.push(content + '\n')
+  function getDataCurta(isoStr) {
+    try {
+      var d = isoStr ? new Date(isoStr) : new Date()
+      var utc = d.getTime() + d.getTimezoneOffset() * 60000
+      var brDate = new Date(utc - 3 * 3600000)
+      var dia = String(brDate.getDate())
+      if (dia.length < 2) dia = '0' + dia
+      var mes = String(brDate.getMonth() + 1)
+      if (mes.length < 2) mes = '0' + mes
+      return dia + '-' + mes + '-' + brDate.getFullYear()
+    } catch (_) {
+      return '31-10-2026'
+    }
   }
 
-  addObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj')
-  addObj('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj')
-  addObj(
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj',
-  )
-  addObj(
-    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj',
-  )
-  addObj(
-    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj',
-  )
-  addObj(
-    '6 0 obj\n<< /Length ' +
-      streamContent.length +
-      ' >>\nstream\n' +
-      streamContent +
-      'endstream\nendobj',
-  )
-
-  var xrefOffset = 0
-  for (var o = 0; o < pdfParts.length; o++) xrefOffset += pdfParts[o].length
-
-  var xref = 'xref\n0 ' + (offsets.length + 1) + '\n0000000000 65535 f \n'
-  for (var k = 0; k < offsets.length; k++) {
-    var offStr = String(offsets[k])
-    while (offStr.length < 10) offStr = '0' + offStr
-    xref += offStr + ' 00000 n \n'
+  function sanitizar(nome) {
+    if (!nome) return 'Paciente'
+    var s = nome
+      .replace(/[áàâãä]/gi, 'a')
+      .replace(/[éèêë]/gi, 'e')
+      .replace(/[íìîï]/gi, 'i')
+      .replace(/[óòôõö]/gi, 'o')
+      .replace(/[úùûü]/gi, 'u')
+      .replace(/[ç]/gi, 'c')
+      .replace(/[ñ]/gi, 'n')
+    return s
+      .replace(/[^a-zA-Z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
   }
-  xref +=
-    'trailer\n<< /Size ' +
-    (offsets.length + 1) +
-    ' /Root 1 0 R >>\nstartxref\n' +
-    xrefOffset +
-    '\n%%EOF\n'
-  pdfParts.push(xref)
-
-  var pdfRaw = pdfParts.join('')
-  var pdfBase64 = toBase64Local(pdfRaw)
-  var pdfSize = pdfRaw.length
 
   var dataCurta = getDataCurta(formRecord.getString('signed_at') || formRecord.getString('created'))
   var nomeSanitizado = sanitizar(patientName)
@@ -813,12 +1701,13 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
   var attachments = [
     {
       filename: pdfFilename,
-      content: pdfBase64,
+      content: pdfResult.base64,
     },
   ]
 
   var subject = 'Comprovante: Ficha de Anamnese Assinada - ' + patientName + ' - ' + fTypeLabel
 
+  var sigData = formRecord.getString('signature_data') || ''
   var sigHtml =
     sigData && sigData.indexOf('data:image') === 0
       ? '<img src="' +
@@ -826,16 +1715,24 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
         '" alt="Assinatura do paciente" style="max-width: 260px; max-height: 90px; border-bottom: 2px solid #831843; display: inline-block;" />'
       : '<div style="height: 60px; border-bottom: 2px solid #831843; display: inline-block; min-width: 200px; line-height: 60px; font-weight: bold; color: #831843;">Assinado Digitalmente</div>'
 
+  var signedAt = formatBr(formRecord.getString('signed_at') || formRecord.getString('created'))
+  var patientCpf = formRecord.getString('patient_cpf') || 'Não informado'
+  var termTitle =
+    formRecord.getString('accepted_term_title') || 'Termo de Consentimento - ' + fTypeLabel
+  var ipOrigem = formRecord.getString('ip_address') || 'Não informado'
+  var userAgent = formRecord.getString('user_agent') || 'Navegador Web/Mobile'
+  var docHash = formRecord.getString('document_hash') || 'SHA-256 REGISTRADO'
+
   var getHtml = function (isClinica) {
     var intro = isClinica
-      ? 'Ola, <strong>Equipe ' +
+      ? 'Olá, <strong>Equipe ' +
         clinicName +
         '</strong>! Segue o comprovante da ficha de anamnese assinada por <strong>' +
         patientName +
         '</strong>.'
-      : 'Ola, <strong>' +
+      : 'Olá, <strong>' +
         patientName +
-        '</strong>! Confirmamos a conclusao e assinatura digital da sua Ficha de Anamnese e Termo de Consentimento.'
+        '</strong>! Confirmamos a conclusão e assinatura digital da sua Ficha de Anamnese e Termo de Consentimento.'
     return `
       <!DOCTYPE html>
       <html lang="pt-BR">
@@ -849,10 +1746,10 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
           <div style="padding: 24px;">
             <p style="font-size: 15px; margin-top: 0;">${intro}</p>
             <p style="font-size: 14px; line-height: 1.5; color: #334155;">
-              Esta e a notificacao oficial registrada para o prontuario digital.
+              Esta é a notificação oficial registrada para o prontuário digital.
             </p>
             <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 13px; color: #166534;">
-              <strong>O documento completo em PDF esta anexado a esta mensagem.</strong>
+              <strong>O documento completo em PDF está anexado a esta mensagem.</strong>
             </div>
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
               <tr style="background-color: #fdf2f8; border-bottom: 1px solid #fbcfe8;">
@@ -868,11 +1765,15 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
                 <td style="padding: 10px 12px;">${patientCpf}</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Data de Nascimento:</td>
+                <td style="padding: 10px 12px;">${patientBirth}</td>
+              </tr>
+              <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Data e Hora do Aceite:</td>
                 <td style="padding: 10px 12px; font-weight: 600; color: #0f172a;">${signedAt}</td>
               </tr>
               <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Termo e Versao Aceita:</td>
+                <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Termo e Versão Aceita:</td>
                 <td style="padding: 10px 12px;">${termTitle}</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -880,7 +1781,7 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
                 <td style="padding: 10px 12px; color: #0369a1; font-weight: 600;">${patientEmail}</td>
               </tr>
               <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 12px; font-weight: bold; color: #475569;">IP de Origem REAL:</td>
+                <td style="padding: 10px 12px; font-weight: bold; color: #475569;">IP de Origem Real:</td>
                 <td style="padding: 10px 12px; font-family: monospace;">${ipOrigem}</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -898,14 +1799,16 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
               <p style="margin: 0; font-size: 12px; font-weight: bold; color: #0f172a;">Hash SHA-256 do Documento:</p>
               <p style="margin: 4px 0 0 0; font-family: monospace; font-size: 11px; word-break: break-all; color: #334155;">${docHash}</p>
               <p style="margin: 6px 0 0 0; font-size: 11px; color: #64748b; font-style: italic;">
-                Codigo de verificacao de integridade - garante que este documento nao foi alterado apos a assinatura.
+                Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.
               </p>
             </div>
           </div>
           <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
-            <strong>${clinicName}</strong> &bull; Responsavel Tecnica: ${techResp} (${profReg})<br/>
-            Endereco: ${clinicAddr} &bull; Telefone: ${clinicPhone}<br/>
-            Fuso horario: Horario de Brasilia (UTC-3)
+            ${!isClinica ? '<p style="margin: 0 0 8px 0; font-weight: 600; color: #065f46;">Esta é a sua via do documento assinado. Guarde para seus registros.</p>' : ''}
+            <p style="margin: 0 0 6px 0; font-size: 11px; color: #475569;">Enviado para: <strong>${patientEmail}</strong></p>
+            <strong>${clinicName}</strong> &bull; Profissional Responsável: ${techResp} (${profReg})<br/>
+            Endereço: ${clinicAddr} &bull; Telefone: ${clinicPhone}<br/>
+            Fuso horário: Horário de Brasília (UTC-3)
           </div>
         </div>
       </body></html>
@@ -948,8 +1851,10 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
           '. Attachment: ' +
           pdfFilename +
           ' (' +
-          pdfSize +
-          ' bytes)',
+          pdfResult.size +
+          ' bytes, ' +
+          pdfResult.pages +
+          ' paginas)',
       )
     } catch (errPac) {
       console.log('Falha ao reenviar e-mail para paciente: ' + errPac.message)
@@ -987,8 +1892,10 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
           '. Attachment: ' +
           pdfFilename +
           ' (' +
-          pdfSize +
-          ' bytes)',
+          pdfResult.size +
+          ' bytes, ' +
+          pdfResult.pages +
+          ' paginas)',
       )
     } catch (errCli) {
       console.log('Falha ao reenviar e-mail para clinica: ' + errCli.message)
@@ -1024,114 +1931,6 @@ onRecordAfterUpdateSuccess((e) => {
       return
     }
 
-    var toBase64Local = function (str) {
-      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-      var bytes = []
-      for (var i = 0; i < str.length; i++) {
-        var c = str.charCodeAt(i)
-        if (c < 128) {
-          bytes.push(c)
-        } else if (c < 2048) {
-          bytes.push((c >> 6) | 192)
-          bytes.push((c & 63) | 128)
-        } else {
-          bytes.push((c >> 12) | 224)
-          bytes.push(((c >> 6) & 63) | 128)
-          bytes.push((c & 63) | 128)
-        }
-      }
-      var output = ''
-      var l = bytes.length
-      for (var j = 0; j < l; j += 3) {
-        var b0 = bytes[j]
-        var b1 = j + 1 < l ? bytes[j + 1] : 0
-        var b2 = j + 2 < l ? bytes[j + 2] : 0
-        output += chars.charAt(b0 >> 2)
-        output += chars.charAt(((b0 & 3) << 4) | (b1 >> 4))
-        output += j + 1 < l ? chars.charAt(((b1 & 15) << 2) | (b2 >> 6)) : '='
-        output += j + 2 < l ? chars.charAt(b2 & 63) : '='
-      }
-      return output
-    }
-
-    var formatBr = function (isoStr) {
-      if (!isoStr) return 'Data nao informada'
-      try {
-        var d = new Date(isoStr)
-        var utc = d.getTime() + d.getTimezoneOffset() * 60000
-        var brDate = new Date(utc - 3 * 3600000)
-        var dia = String(brDate.getDate())
-        if (dia.length < 2) dia = '0' + dia
-        var mes = String(brDate.getMonth() + 1)
-        if (mes.length < 2) mes = '0' + mes
-        var ano = brDate.getFullYear()
-        var horas = String(brDate.getHours())
-        if (horas.length < 2) horas = '0' + horas
-        var minutos = String(brDate.getMinutes())
-        if (minutos.length < 2) minutos = '0' + minutos
-        return (
-          dia + '/' + mes + '/' + ano + ' as ' + horas + ':' + minutos + ' (horario de Brasilia)'
-        )
-      } catch (_) {
-        return isoStr
-      }
-    }
-
-    var getDataCurta = function (isoStr) {
-      try {
-        var d = isoStr ? new Date(isoStr) : new Date()
-        var utc = d.getTime() + d.getTimezoneOffset() * 60000
-        var brDate = new Date(utc - 3 * 3600000)
-        var dia = String(brDate.getDate())
-        if (dia.length < 2) dia = '0' + dia
-        var mes = String(brDate.getMonth() + 1)
-        if (mes.length < 2) mes = '0' + mes
-        return dia + '-' + mes + '-' + brDate.getFullYear()
-      } catch (_) {
-        return '31-10-2026'
-      }
-    }
-
-    var sanitizar = function (nome) {
-      if (!nome) return 'Paciente'
-      var s = nome
-        .replace(/[áàâãä]/gi, 'a')
-        .replace(/[éèêë]/gi, 'e')
-        .replace(/[íìîï]/gi, 'i')
-        .replace(/[óòôõö]/gi, 'o')
-        .replace(/[úùûü]/gi, 'u')
-        .replace(/[ç]/gi, 'c')
-        .replace(/[ñ]/gi, 'n')
-      return s
-        .replace(/[^a-zA-Z0-9]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '')
-    }
-
-    var normAscii = function (str) {
-      if (!str) return ''
-      return String(str)
-        .replace(/[áàâãä]/gi, 'a')
-        .replace(/[éèêë]/gi, 'e')
-        .replace(/[íìîï]/gi, 'i')
-        .replace(/[óòôõö]/gi, 'o')
-        .replace(/[úùûü]/gi, 'u')
-        .replace(/[ç]/gi, 'c')
-        .replace(/[ñ]/gi, 'n')
-        .replace(/[ÁÀÂÃÄ]/g, 'A')
-        .replace(/[ÉÈÊË]/g, 'E')
-        .replace(/[ÍÌÎÏ]/g, 'I')
-        .replace(/[ÓÒÔÕÖ]/g, 'O')
-        .replace(/[ÚÙÛÜ]/g, 'U')
-        .replace(/[Ç]/g, 'C')
-        .replace(/[Ñ]/g, 'N')
-    }
-
-    var escPdf = function (text) {
-      if (!text) return ''
-      return String(text).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
-    }
-
     var settingsRec = null
     try {
       var recs = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
@@ -1139,11 +1938,11 @@ onRecordAfterUpdateSuccess((e) => {
     } catch (_) {}
 
     var clinicName = 'Andresa Souza Clinic'
-    var techResp = 'Dra. Andresa Souza'
-    var profReg = 'CRBM 12345'
+    var techResp = 'Andresa Souza — CREFITO-13 000000-F'
+    var profReg = 'CREFITO-13 000000-F'
     var clinicAddr = 'Jardins, Aracaju - SE'
-    var clinicPhone = '79998091314'
-    var clinicEmail = 'gihobaicn@hotmail.com'
+    var clinicPhone = '(79) 99980-9134'
+    var clinicEmail = 'andresasouzaclinic@gmail.com'
     var senderEmail = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
 
     if (settingsRec) {
@@ -1167,284 +1966,1277 @@ onRecordAfterUpdateSuccess((e) => {
     var patientName = record.getString('patient_name') || 'Paciente'
     var fType = record.getString('form_type') || 'geral'
     var formTypeLabels = {
-      geral: 'Anamnese Geral',
-      labios: 'Labios & Micropigmentacao Labial',
-      botox: 'Toxina Botulinica (Botox)',
+      geral: 'Anamnese Estética Geral',
+      labios: 'Lábios, Micropigmentação & Revitalização Labial',
+      botox: 'Toxina Botulínica (Botox)',
     }
     var fTypeLabel = formTypeLabels[fType] || fType
 
-    var patientCpf = record.getString('patient_cpf') || 'Nao informado'
-    var patientPhone = record.getString('patient_phone') || 'Nao informado'
-    var patientBirth = record.getString('patient_birth_date') || 'Nao informado'
-    var patientRg = record.getString('patient_rg') || 'Nao informado'
-    var patientProf = record.getString('patient_profession') || 'Nao informado'
-    var patientEmerg = record.getString('patient_emergency_contact') || 'Nao informado'
-    var patientAddr = record.getString('patient_address') || 'Nao informado'
+    // --- GERADOR DE PDF INLINE AUTOCONTIDO ---
+    var pdfResult = (function (rec, settings) {
+      if (!rec) return { rawPdf: '', base64: '', size: 0, pages: 1 }
+      var base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+      var base64Lookup = new Uint8Array(256)
+      for (var bIdx = 0; bIdx < base64Chars.length; bIdx++) {
+        base64Lookup[base64Chars.charCodeAt(bIdx)] = bIdx
+      }
 
-    var signedAt = formatBr(record.getString('signed_at') || record.getString('created'))
-    var ipOrigem = record.getString('ip_address') || 'Nao informado'
-    var userAgent = record.getString('user_agent') || 'Navegador Web/Mobile'
-    var docHash = record.getString('document_hash') || 'SHA-256 REGISTRADO'
-    var termTitle =
-      record.getString('accepted_term_title') || 'Termo de Consentimento - ' + fTypeLabel
-    var sigData = record.getString('signature_data') || ''
+      function decodeBase64ToBytes(base64Str) {
+        var clean = base64Str.replace(/[^A-Za-z0-9+/=]/g, '')
+        var len = clean.length
+        var placeHolders =
+          clean.charAt(len - 1) === '=' ? (clean.charAt(len - 2) === '=' ? 2 : 1) : 0
+        var byteLen = Math.floor((len * 3) / 4) - placeHolders
+        var bytes = new Uint8Array(byteLen)
+        var curByte = 0
+        for (var i = 0; i < len; i += 4) {
+          var enc1 = base64Lookup[clean.charCodeAt(i)]
+          var enc2 = base64Lookup[clean.charCodeAt(i + 1)]
+          var enc3 = base64Lookup[clean.charCodeAt(i + 2)]
+          var enc4 = base64Lookup[clean.charCodeAt(i + 3)]
 
-    var lines = []
-    lines.push({ size: 16, bold: true, color: '0.51 0.09 0.26', text: normAscii(clinicName) })
-    lines.push({
-      size: 10,
-      bold: false,
-      color: '0.4 0.4 0.4',
-      text: 'Prontuario Digital & Ficha de Anamnese Oficial',
-    })
-    lines.push({
-      size: 10,
-      bold: false,
-      color: '0.4 0.4 0.4',
-      text: 'Procedimento: ' + normAscii(fTypeLabel),
-    })
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.7 0.7 0.7',
-      text: '_____________________________________________________________________________________',
-    })
-    lines.push({ size: 6, text: '' })
+          bytes[curByte++] = (enc1 << 2) | (enc2 >> 4)
+          if (curByte < byteLen) bytes[curByte++] = ((enc2 & 15) << 4) | (enc3 >> 2)
+          if (curByte < byteLen) bytes[curByte++] = ((enc3 & 3) << 6) | enc4
+        }
+        return bytes
+      }
 
-    lines.push({
-      size: 12,
-      bold: true,
-      color: '0.51 0.09 0.26',
-      text: '1. DADOS CADASTRAIS DO PACIENTE',
-    })
-    lines.push({
-      size: 9,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text: 'Nome: ' + normAscii(patientName) + '   |   CPF: ' + normAscii(patientCpf),
-    })
-    lines.push({
-      size: 9,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text: 'E-mail: ' + normAscii(patientEmail) + '   |   Telefone: ' + normAscii(patientPhone),
-    })
-    lines.push({
-      size: 9,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text: 'Nascimento: ' + normAscii(patientBirth) + '   |   RG: ' + normAscii(patientRg),
-    })
-    lines.push({
-      size: 9,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text:
-        'Profissao: ' + normAscii(patientProf) + '   |   Emergencia: ' + normAscii(patientEmerg),
-    })
-    lines.push({
-      size: 9,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text: 'Endereco: ' + normAscii(patientAddr),
-    })
-    lines.push({ size: 6, text: '' })
+      function encodeBinaryStringToBase64(binStr) {
+        var output = ''
+        var len = binStr.length
+        for (var j = 0; j < len; j += 3) {
+          var b0 = binStr.charCodeAt(j) & 0xff
+          var b1 = j + 1 < len ? binStr.charCodeAt(j + 1) & 0xff : 0
+          var b2 = j + 2 < len ? binStr.charCodeAt(j + 2) & 0xff : 0
+          output += base64Chars.charAt(b0 >> 2)
+          output += base64Chars.charAt(((b0 & 3) << 4) | (b1 >> 4))
+          output += j + 1 < len ? base64Chars.charAt(((b1 & 15) << 2) | (b2 >> 6)) : '='
+          output += j + 2 < len ? base64Chars.charAt(b2 & 63) : '='
+        }
+        return output
+      }
 
-    lines.push({
-      size: 12,
-      bold: true,
-      color: '0.51 0.09 0.26',
-      text: '2. QUESTIONARIO DE ANAMNESE E SAUDE',
-    })
-    try {
-      var rawAnswers = record.getString('answers')
-      if (rawAnswers) {
-        var answersObj = JSON.parse(rawAnswers)
-        var aKeys = Object.keys(answersObj)
-        for (var k = 0; k < aKeys.length; k++) {
-          var aKey = aKeys[k]
-          var val = answersObj[aKey]
-          var label = aKey.replace(/_/g, ' ').toUpperCase()
-          var valStr = Array.isArray(val) ? val.join(', ') : String(val)
-          lines.push({
-            size: 8,
-            bold: false,
-            color: '0.2 0.2 0.2',
-            text: '- ' + normAscii(label) + ': ' + normAscii(valStr),
-          })
+      function tinfUncompress(source) {
+        var TINF_OK = 0
+        var sltree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+        var sdtree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+        var length_bits = new Uint8Array(30)
+        var length_base = new Uint16Array(30)
+        var dist_bits = new Uint8Array(30)
+        var dist_base = new Uint16Array(30)
+        var clcidx = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+
+        function tinf_build_bits_base(bits, base, delta, first) {
+          var i, sum
+          for (i = 0; i < delta; ++i) bits[i] = 0
+          for (i = 0; i < 30 - delta; ++i) bits[i + delta] = Math.floor(i / delta)
+          for (sum = first, i = 0; i < 30; ++i) {
+            base[i] = sum
+            sum += 1 << bits[i]
+          }
+        }
+
+        function tinf_build_fixed_trees(lt, dt) {
+          var i
+          for (i = 0; i < 7; ++i) lt.table[i] = 0
+          lt.table[7] = 24
+          lt.table[8] = 152
+          lt.table[9] = 112
+          for (i = 0; i < 24; ++i) lt.trans[i] = 256 + i
+          for (i = 0; i < 144; ++i) lt.trans[24 + i] = i
+          for (i = 0; i < 8; ++i) lt.trans[24 + 144 + i] = 280 + i
+          for (i = 0; i < 112; ++i) lt.trans[24 + 144 + 8 + i] = 144 + i
+          for (i = 0; i < 5; ++i) dt.table[i] = 0
+          dt.table[5] = 32
+          for (i = 0; i < 32; ++i) dt.trans[i] = i
+        }
+
+        tinf_build_fixed_trees(sltree, sdtree)
+        tinf_build_bits_base(length_bits, length_base, 4, 3)
+        tinf_build_bits_base(dist_bits, dist_base, 2, 1)
+        length_bits[28] = 0
+        length_base[28] = 258
+
+        function tinf_build_tree(t, lengths, off, num) {
+          var offs = new Uint16Array(16)
+          var i, sum
+          for (i = 0; i < 16; ++i) t.table[i] = 0
+          for (i = 0; i < num; ++i) t.table[lengths[off + i]]++
+          t.table[0] = 0
+          for (sum = 0, i = 0; i < 16; ++i) {
+            offs[i] = sum
+            sum += t.table[i]
+          }
+          for (i = 0; i < num; ++i) {
+            if (lengths[off + i]) t.trans[offs[lengths[off + i]]++] = i
+          }
+        }
+
+        var d = {
+          source: source,
+          sourceIndex: 0,
+          tag: 0,
+          bitcount: 0,
+          dest: new Uint8Array(source.length * 8 + 65536),
+          destLen: 0,
+          ltree: { table: new Uint16Array(16), trans: new Uint16Array(288) },
+          dtree: { table: new Uint16Array(16), trans: new Uint16Array(288) },
+        }
+
+        function tinf_getbit(d) {
+          if (!d.bitcount--) {
+            d.tag = d.source[d.sourceIndex++]
+            d.bitcount = 7
+          }
+          var bit = d.tag & 1
+          d.tag >>>= 1
+          return bit
+        }
+
+        function tinf_read_bits(d, num, base) {
+          if (!num) return base
+          while (d.bitcount < 24) {
+            d.tag |= d.source[d.sourceIndex++] << d.bitcount
+            d.bitcount += 8
+          }
+          var val = d.tag & (0xffff >>> (16 - num))
+          d.tag >>>= num
+          d.bitcount -= num
+          return val + base
+        }
+
+        function tinf_decode_symbol(d, t) {
+          while (d.bitcount < 24) {
+            d.tag |= d.source[d.sourceIndex++] << d.bitcount
+            d.bitcount += 8
+          }
+          var sum = 0,
+            cur = 0,
+            len = 0
+          var tag = d.tag
+          do {
+            cur = 2 * cur + (tag & 1)
+            tag >>>= 1
+            ++len
+            sum += t.table[len]
+            cur -= t.table[len]
+          } while (cur >= 0)
+          d.tag = tag
+          d.bitcount -= len
+          return t.trans[sum + cur]
+        }
+
+        function tinf_decode_trees(d, lt, dt) {
+          var hlit = tinf_read_bits(d, 5, 257)
+          var hdist = tinf_read_bits(d, 5, 1)
+          var hclen = tinf_read_bits(d, 4, 4)
+          var lengths = new Uint8Array(288 + 32)
+          var code_tree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+          var i, num, length
+
+          for (i = 0; i < 19; ++i) lengths[i] = 0
+          for (i = 0; i < hclen; ++i) {
+            lengths[clcidx[i]] = tinf_read_bits(d, 3, 0)
+          }
+          tinf_build_tree(code_tree, lengths, 0, 19)
+
+          for (num = 0; num < hlit + hdist; ) {
+            var sym = tinf_decode_symbol(d, code_tree)
+            switch (sym) {
+              case 16:
+                var prev = lengths[num - 1]
+                for (length = tinf_read_bits(d, 2, 3); length; --length) lengths[num++] = prev
+                break
+              case 17:
+                for (length = tinf_read_bits(d, 3, 3); length; --length) lengths[num++] = 0
+                break
+              case 18:
+                for (length = tinf_read_bits(d, 7, 11); length; --length) lengths[num++] = 0
+                break
+              default:
+                lengths[num++] = sym
+                break
+            }
+          }
+          tinf_build_tree(lt, lengths, 0, hlit)
+          tinf_build_tree(dt, lengths, hlit, hdist)
+        }
+
+        function tinf_inflate_block_data(d, lt, dt) {
+          while (1) {
+            var sym = tinf_decode_symbol(d, lt)
+            if (sym === 256) return TINF_OK
+            if (sym < 256) {
+              if (d.destLen >= d.dest.length) {
+                var bigger = new Uint8Array(d.dest.length * 2)
+                bigger.set(d.dest)
+                d.dest = bigger
+              }
+              d.dest[d.destLen++] = sym
+            } else {
+              sym -= 257
+              var length = tinf_read_bits(d, length_bits[sym], length_base[sym])
+              var dist = tinf_decode_symbol(d, dt)
+              var offs = d.destLen - tinf_read_bits(d, dist_bits[dist], dist_base[dist])
+              if (d.destLen + length >= d.dest.length) {
+                var bigger2 = new Uint8Array(
+                  Math.max(d.dest.length * 2, d.destLen + length + 65536),
+                )
+                bigger2.set(d.dest)
+                d.dest = bigger2
+              }
+              for (var i = offs; i < offs + length; ++i) {
+                d.dest[d.destLen++] = d.dest[i]
+              }
+            }
+          }
+        }
+
+        function tinf_inflate_uncompressed_block(d) {
+          while (d.bitcount > 8) {
+            d.sourceIndex--
+            d.bitcount -= 8
+          }
+          var length = d.source[d.sourceIndex + 1] * 256 + d.source[d.sourceIndex]
+          d.sourceIndex += 4
+          if (d.destLen + length >= d.dest.length) {
+            var bigger = new Uint8Array(d.dest.length + length + 65536)
+            bigger.set(d.dest)
+            d.dest = bigger
+          }
+          for (var i = length; i; --i) d.dest[d.destLen++] = d.source[d.sourceIndex++]
+          d.bitcount = 0
+          return TINF_OK
+        }
+
+        var bfinal
+        do {
+          bfinal = tinf_getbit(d)
+          var btype = tinf_read_bits(d, 2, 0)
+          switch (btype) {
+            case 0:
+              tinf_inflate_uncompressed_block(d)
+              break
+            case 1:
+              tinf_inflate_block_data(d, sltree, sdtree)
+              break
+            case 2:
+              tinf_decode_trees(d, d.ltree, d.dtree)
+              tinf_inflate_block_data(d, d.ltree, d.dtree)
+              break
+            default:
+              throw new Error('Data error inflate')
+          }
+        } while (!bfinal)
+
+        return d.dest.subarray(0, d.destLen)
+      }
+
+      var signatureImageObj = null
+      var rawSigData = rec.getString('signature_data') || ''
+
+      if (rawSigData && rawSigData.indexOf('data:image/') === 0) {
+        try {
+          var commaIdx = rawSigData.indexOf(',')
+          var headerPart = rawSigData.substring(0, commaIdx)
+          var b64Data = rawSigData.substring(commaIdx + 1)
+          var imgBytes = decodeBase64ToBytes(b64Data)
+
+          if (headerPart.indexOf('image/jpeg') !== -1 || headerPart.indexOf('image/jpg') !== -1) {
+            var jW = 600
+            var jH = 200
+            for (var p = 0; p < imgBytes.length - 8; p++) {
+              if (imgBytes[p] === 0xff && (imgBytes[p + 1] === 0xc0 || imgBytes[p + 1] === 0xc2)) {
+                jH = (imgBytes[p + 5] << 8) | imgBytes[p + 6]
+                jW = (imgBytes[p + 7] << 8) | imgBytes[p + 8]
+                break
+              }
+            }
+            var binJpeg = ''
+            for (var ji = 0; ji < imgBytes.length; ji++) {
+              binJpeg += String.fromCharCode(imgBytes[ji])
+            }
+            signatureImageObj = {
+              width: jW,
+              height: jH,
+              colorSpace: '/DeviceRGB',
+              bits: 8,
+              filter: '/DCTDecode',
+              stream: binJpeg,
+            }
+          } else if (headerPart.indexOf('image/png') !== -1) {
+            if (
+              imgBytes.length > 24 &&
+              imgBytes[0] === 0x89 &&
+              imgBytes[1] === 0x50 &&
+              imgBytes[2] === 0x4e &&
+              imgBytes[3] === 0x47
+            ) {
+              var pW =
+                (imgBytes[16] << 24) | (imgBytes[17] << 16) | (imgBytes[18] << 8) | imgBytes[19]
+              var pH =
+                (imgBytes[20] << 24) | (imgBytes[21] << 16) | (imgBytes[22] << 8) | imgBytes[23]
+              var bitDepth = imgBytes[24]
+              var colorType = imgBytes[25]
+              var interlace = imgBytes[28]
+
+              var idatParts = []
+              var offset = 8
+              while (offset < imgBytes.length - 8) {
+                var cLen =
+                  (imgBytes[offset] << 24) |
+                  (imgBytes[offset + 1] << 16) |
+                  (imgBytes[offset + 2] << 8) |
+                  imgBytes[offset + 3]
+                var cType = String.fromCharCode(
+                  imgBytes[offset + 4],
+                  imgBytes[offset + 5],
+                  imgBytes[offset + 6],
+                  imgBytes[offset + 7],
+                )
+                if (cType === 'IDAT') {
+                  idatParts.push(imgBytes.subarray(offset + 8, offset + 8 + cLen))
+                }
+                offset += 12 + cLen
+                if (cType === 'IEND') break
+              }
+
+              var totalIdatLen = 0
+              for (var ip = 0; ip < idatParts.length; ip++) totalIdatLen += idatParts[ip].length
+              var idatBytes = new Uint8Array(totalIdatLen)
+              var curIdatOff = 0
+              for (var ip2 = 0; ip2 < idatParts.length; ip2++) {
+                idatBytes.set(idatParts[ip2], curIdatOff)
+                curIdatOff += idatParts[ip2].length
+              }
+
+              var binIdat = ''
+              for (var bi = 0; bi < idatBytes.length; bi++) {
+                binIdat += String.fromCharCode(idatBytes[bi])
+              }
+
+              if (colorType === 2 && interlace === 0 && bitDepth === 8) {
+                signatureImageObj = {
+                  width: pW,
+                  height: pH,
+                  colorSpace: '/DeviceRGB',
+                  bits: 8,
+                  filter: '/FlateDecode',
+                  decodeParms:
+                    '<< /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ' + pW + ' >>',
+                  stream: binIdat,
+                }
+              } else if (colorType === 0 && interlace === 0 && bitDepth === 8) {
+                signatureImageObj = {
+                  width: pW,
+                  height: pH,
+                  colorSpace: '/DeviceGray',
+                  bits: 8,
+                  filter: '/FlateDecode',
+                  decodeParms:
+                    '<< /Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns ' + pW + ' >>',
+                  stream: binIdat,
+                }
+              } else if (colorType === 6 || colorType === 3 || colorType === 2) {
+                try {
+                  var decompressed = tinfUncompress(idatBytes.subarray(2))
+                  if (decompressed && decompressed.length > 0) {
+                    var bytesPerPix = colorType === 6 ? 4 : colorType === 2 ? 3 : 1
+                    var scanlineLen = pW * bytesPerPix
+                    var rawRgbBytes = []
+
+                    var prevScanline = new Uint8Array(scanlineLen)
+                    var decOff = 0
+
+                    for (var row = 0; row < pH; row++) {
+                      if (decOff >= decompressed.length) break
+                      var filterType = decompressed[decOff++]
+                      var curScanline = new Uint8Array(scanlineLen)
+
+                      for (var col = 0; col < scanlineLen; col++) {
+                        var rawByte = decompressed[decOff++]
+                        var a = col >= bytesPerPix ? curScanline[col - bytesPerPix] : 0
+                        var b = prevScanline[col]
+                        var c = col >= bytesPerPix ? prevScanline[col - bytesPerPix] : 0
+
+                        var val = rawByte
+                        if (filterType === 1) {
+                          val = (rawByte + a) & 0xff
+                        } else if (filterType === 2) {
+                          val = (rawByte + b) & 0xff
+                        } else if (filterType === 3) {
+                          val = (rawByte + Math.floor((a + b) / 2)) & 0xff
+                        } else if (filterType === 4) {
+                          var pP = a + b - c
+                          var pa = Math.abs(pP - a)
+                          var pb = Math.abs(pP - b)
+                          var pc = Math.abs(pP - c)
+                          var pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+                          val = (rawByte + pr) & 0xff
+                        }
+                        curScanline[col] = val
+                      }
+
+                      prevScanline = curScanline
+
+                      if (colorType === 6) {
+                        for (var px = 0; px < pW; px++) {
+                          var r = curScanline[px * 4]
+                          var g = curScanline[px * 4 + 1]
+                          var bl = curScanline[px * 4 + 2]
+                          var al = curScanline[px * 4 + 3] / 255.0
+                          var outR = Math.round(r * al + 255 * (1 - al))
+                          var outG = Math.round(g * al + 255 * (1 - al))
+                          var outB = Math.round(bl * al + 255 * (1 - al))
+                          rawRgbBytes.push(outR, outG, outB)
+                        }
+                      } else if (colorType === 2) {
+                        for (var px2 = 0; px2 < curScanline.length; px2++) {
+                          rawRgbBytes.push(curScanline[px2])
+                        }
+                      }
+                    }
+
+                    if (rawRgbBytes.length === pW * pH * 3) {
+                      var rgbBin = ''
+                      for (var rbi = 0; rbi < rawRgbBytes.length; rbi++) {
+                        rgbBin += String.fromCharCode(rawRgbBytes[rbi])
+                      }
+                      signatureImageObj = {
+                        width: pW,
+                        height: pH,
+                        colorSpace: '/DeviceRGB',
+                        bits: 8,
+                        filter: null,
+                        stream: rgbBin,
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      function toWinAnsiByte(charStr) {
+        var c = charStr.charCodeAt(0)
+        if (c < 128) return c
+        var map = {
+          0x20ac: 0x80,
+          0x201a: 0x82,
+          0x0192: 0x83,
+          0x201e: 0x84,
+          0x2026: 0x85,
+          0x2020: 0x86,
+          0x2021: 0x87,
+          0x02c6: 0x88,
+          0x2030: 0x89,
+          0x0160: 0x8a,
+          0x2039: 0x8b,
+          0x0152: 0x8c,
+          0x017d: 0x8e,
+          0x2018: 0x91,
+          0x2019: 0x92,
+          0x201c: 0x93,
+          0x201d: 0x94,
+          0x2022: 0x95,
+          0x2013: 0x96,
+          0x2014: 0x97,
+          0x02dc: 0x98,
+          0x2122: 0x99,
+          0x0161: 0x9a,
+          0x203a: 0x9b,
+          0x0153: 0x9c,
+          0x017e: 0x9e,
+          0x0178: 0x9f,
+        }
+        if (map[c]) return map[c]
+        if (c >= 160 && c <= 255) return c
+        return 63
+      }
+
+      function escPdfWinAnsi(text) {
+        if (!text) return ''
+        var out = ''
+        var s = String(text)
+        for (var i = 0; i < s.length; i++) {
+          var ch = s.charAt(i)
+          var b = toWinAnsiByte(ch)
+          if (b === 92) {
+            out += '\\\\'
+          } else if (b === 40) {
+            out += '\\('
+          } else if (b === 41) {
+            out += '\\)'
+          } else if (b >= 32 && b <= 126) {
+            out += ch
+          } else {
+            var oct = b.toString(8)
+            while (oct.length < 3) oct = '0' + oct
+            out += '\\' + oct
+          }
+        }
+        return out
+      }
+
+      function estimateCharWidth(ch, fontSize) {
+        var c = ch.charCodeAt(0)
+        var ratio = 0.52
+        if ('ijlI1.:;,|!/\\'.indexOf(ch) !== -1) ratio = 0.28
+        else if ('mwMWOQ@%'.indexOf(ch) !== -1) ratio = 0.8
+        else if ('frt -()[]{}'.indexOf(ch) !== -1) ratio = 0.35
+        else if (c >= 65 && c <= 90) ratio = 0.65
+        return ratio * fontSize
+      }
+
+      function measureTextWidth(text, fontSize) {
+        var w = 0
+        var s = String(text || '')
+        for (var i = 0; i < s.length; i++) {
+          w += estimateCharWidth(s.charAt(i), fontSize)
+        }
+        return w
+      }
+
+      function wrapText(text, maxPts, fontSize) {
+        if (!text) return []
+        var words = String(text).split(' ')
+        var lines = []
+        var curLine = ''
+
+        for (var i = 0; i < words.length; i++) {
+          var w = words[i]
+          var test = curLine ? curLine + ' ' + w : w
+          if (measureTextWidth(test, fontSize) <= maxPts) {
+            curLine = test
+          } else {
+            if (curLine) lines.push(curLine)
+            curLine = w
+          }
+        }
+        if (curLine) lines.push(curLine)
+        return lines
+      }
+
+      function formatBrDate(isoStr) {
+        if (!isoStr) return 'Não informada'
+        try {
+          var d = new Date(isoStr)
+          var utc = d.getTime() + d.getTimezoneOffset() * 60000
+          var brDate = new Date(utc - 3 * 3600000)
+          var dia = String(brDate.getDate())
+          if (dia.length < 2) dia = '0' + dia
+          var mes = String(brDate.getMonth() + 1)
+          if (mes.length < 2) mes = '0' + mes
+          var ano = brDate.getFullYear()
+          var horas = String(brDate.getHours())
+          if (horas.length < 2) horas = '0' + horas
+          var minutos = String(brDate.getMinutes())
+          if (minutos.length < 2) minutos = '0' + minutos
+          return (
+            dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos + ' (horário de Brasília)'
+          )
+        } catch (_) {
+          return isoStr
         }
       }
-    } catch (_) {
-      lines.push({
-        size: 8,
-        bold: false,
-        color: '0.4 0.4 0.4',
-        text: 'Respostas arquivadas no sistema.',
-      })
-    }
-    lines.push({ size: 6, text: '' })
 
-    lines.push({
-      size: 12,
-      bold: true,
-      color: '0.51 0.09 0.26',
-      text: '3. TERMO DE CONSENTIMENTO LIVRE E ESCLARECIDO',
-    })
-    lines.push({ size: 9, bold: true, color: '0.2 0.2 0.2', text: normAscii(termTitle) })
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.3 0.3 0.3',
-      text: 'Declaracao de consentimento integralmente lida, confirmada e assinada eletronicamente.',
-    })
-    lines.push({ size: 6, text: '' })
-
-    lines.push({
-      size: 11,
-      bold: true,
-      color: '0.51 0.09 0.26',
-      text: '4. CERTIFICADO DE ASSINATURA ELETRONICA',
-    })
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text: 'Data e Hora: ' + normAscii(signedAt),
-    })
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text: 'IP de Origem Real: ' + normAscii(ipOrigem),
-    })
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.1 0.1 0.1',
-      text: 'Hash SHA-256 de Integridade: ' + normAscii(docHash),
-    })
-    lines.push({
-      size: 7,
-      bold: false,
-      color: '0.4 0.4 0.4',
-      text: 'Dispositivo: ' + normAscii(userAgent.substring(0, 100)),
-    })
-    lines.push({
-      size: 8,
-      bold: true,
-      color: '0.1 0.1 0.1',
-      text: 'Status: ASSINATURA ELETRONICA VALIDA E CONCLUIDA',
-    })
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.2 0.2 0.2',
-      text: 'Signatario: ' + normAscii(patientName),
-    })
-    lines.push({
-      size: 8,
-      bold: false,
-      color: '0.7 0.7 0.7',
-      text: '_____________________________________________________________________________________',
-    })
-    lines.push({
-      size: 7,
-      bold: false,
-      color: '0.4 0.4 0.4',
-      text:
-        normAscii(clinicName) +
-        ' | Resp. Tecnica: ' +
-        normAscii(techResp) +
-        ' (' +
-        normAscii(profReg) +
-        ')',
-    })
-    lines.push({
-      size: 7,
-      bold: false,
-      color: '0.4 0.4 0.4',
-      text: 'Endereco: ' + normAscii(clinicAddr) + ' | Telefone: ' + normAscii(clinicPhone),
-    })
-
-    var streamContent = 'q\n'
-    var currentY = 780
-    for (var li = 0; li < lines.length; li++) {
-      var ln = lines[li]
-      if (ln.text === '') {
-        currentY -= ln.size || 6
-        continue
+      function formatShortDate(isoStr) {
+        try {
+          var d = isoStr ? new Date(isoStr) : new Date()
+          var utc = d.getTime() + d.getTimezoneOffset() * 60000
+          var brDate = new Date(utc - 3 * 3600000)
+          var dia = String(brDate.getDate())
+          if (dia.length < 2) dia = '0' + dia
+          var mes = String(brDate.getMonth() + 1)
+          if (mes.length < 2) mes = '0' + mes
+          return dia + '/' + mes + '/' + brDate.getFullYear()
+        } catch (_) {
+          return '31/10/2026'
+        }
       }
-      var fontName = ln.bold ? '/F2' : '/F1'
-      var fontSize = ln.size || 9
-      var color = ln.color || '0 0 0'
 
-      streamContent +=
-        'BT\n' +
-        color +
-        ' rg\n' +
-        fontName +
-        ' ' +
-        fontSize +
-        ' Tf\n1 0 0 1 40 ' +
-        currentY +
-        ' Tm\n(' +
-        escPdf(ln.text) +
-        ') Tj\nET\n'
-      currentY -= Math.round(fontSize * 1.35) + 3
-      if (currentY < 40) break
+      function formatBirthDateBR(dateStr) {
+        if (!dateStr || dateStr === 'Não informado') return 'Não informado'
+        try {
+          var clean = String(dateStr).trim().split('T')[0]
+          var match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+          if (match) {
+            return match[3] + '/' + match[2] + '/' + match[1]
+          }
+          return dateStr
+        } catch (_) {
+          return dateStr
+        }
+      }
+
+      var patientName = rec.getString('patient_name') || 'Paciente'
+      var patientCpf = rec.getString('patient_cpf') || 'Não informado'
+      var patientEmail = rec.getString('patient_email') || 'Não informado'
+      var patientPhone = rec.getString('patient_phone') || 'Não informado'
+      var patientBirth = formatBirthDateBR(rec.getString('patient_birth_date'))
+      var patientRg = rec.getString('patient_rg') || 'Não informado'
+      var patientProf = rec.getString('patient_profession') || 'Não informado'
+      var patientEmerg = rec.getString('patient_emergency_contact') || 'Não informado'
+      var patientAddr = rec.getString('patient_address') || 'Não informado'
+
+      var fType = rec.getString('form_type') || 'geral'
+      var formTypeLabels = {
+        geral: 'Anamnese Estética Geral',
+        labios: 'Lábios, Micropigmentação & Revitalização Labial',
+        botox: 'Toxina Botulínica (Botox)',
+      }
+      var fTypeLabel = formTypeLabels[fType] || fType
+
+      var signedAt = formatBrDate(rec.getString('signed_at') || rec.getString('created'))
+      var signedDateShort = formatShortDate(rec.getString('signed_at') || rec.getString('created'))
+      var ipOrigem = rec.getString('ip_address') || 'Não informado'
+      var userAgent = rec.getString('user_agent') || 'Navegador Web/Mobile'
+      var docHash = rec.getString('document_hash') || 'SHA-256 REGISTRADO'
+      var termTitle =
+        rec.getString('accepted_term_title') || 'Termo de Consentimento - ' + fTypeLabel
+      var termText = rec.getString('accepted_term_text') || ''
+
+      var PAGE_WIDTH = 595.28
+      var PAGE_HEIGHT = 841.89
+      var MARGIN_X = 56.7
+      var CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN_X
+      var HEADER_TOP = PAGE_HEIGHT - 38
+      var CONTENT_TOP = PAGE_HEIGHT - 80
+      var CONTENT_BOTTOM = 65
+
+      var pages = []
+      var curPage = { commands: [] }
+      var curY = CONTENT_TOP
+
+      function newPage() {
+        pages.push(curPage)
+        curPage = { commands: [] }
+        curY = CONTENT_TOP
+      }
+
+      function ensureSpace(ptsNeeded) {
+        if (curY - ptsNeeded < CONTENT_BOTTOM) {
+          newPage()
+        }
+      }
+
+      function drawSectionTitle(titleText) {
+        ensureSpace(32)
+        curY -= 6
+        curPage.commands.push(
+          'q 0.514 0.094 0.263 rg 1 w ' +
+            MARGIN_X +
+            ' ' +
+            (curY - 18) +
+            ' ' +
+            CONTENT_WIDTH +
+            ' 0.5 re f Q',
+        )
+        curPage.commands.push(
+          'BT /F2 12 Tf 0.514 0.094 0.263 rg ' +
+            MARGIN_X +
+            ' ' +
+            (curY - 12) +
+            ' Td (' +
+            escPdfWinAnsi(titleText) +
+            ') Tj ET',
+        )
+        curY -= 26
+      }
+
+      function drawTwoColumnTable(rows, col1Width, col2Width) {
+        for (var r = 0; r < rows.length; r++) {
+          var row = rows[r]
+          var label = row.label || ''
+          var val = row.value || ''
+          var isAlt = r % 2 === 1
+
+          var labelLines = wrapText(label, col1Width - 14, 9)
+          var valLines = wrapText(val, col2Width - 14, 9)
+          var numLines = Math.max(labelLines.length, valLines.length, 1)
+          var rowH = numLines * 13 + 8
+
+          ensureSpace(rowH + 2)
+
+          if (isAlt) {
+            curPage.commands.push(
+              'q 0.965 0.972 0.980 rg ' +
+                MARGIN_X +
+                ' ' +
+                (curY - rowH) +
+                ' ' +
+                CONTENT_WIDTH +
+                ' ' +
+                rowH +
+                ' re f Q',
+            )
+          }
+
+          curPage.commands.push(
+            'q 0.88 0.90 0.93 RG 0.5 w ' +
+              MARGIN_X +
+              ' ' +
+              (curY - rowH) +
+              ' m ' +
+              (MARGIN_X + CONTENT_WIDTH) +
+              ' ' +
+              (curY - rowH) +
+              ' l S Q',
+          )
+
+          var textY = curY - 14
+          for (var l = 0; l < labelLines.length; l++) {
+            curPage.commands.push(
+              'BT /F2 9 Tf 0.18 0.23 0.32 rg ' +
+                (MARGIN_X + 6) +
+                ' ' +
+                (textY - l * 12) +
+                ' Td (' +
+                escPdfWinAnsi(labelLines[l]) +
+                ') Tj ET',
+            )
+          }
+
+          for (var v = 0; v < valLines.length; v++) {
+            curPage.commands.push(
+              'BT /F1 9 Tf 0.10 0.14 0.20 rg ' +
+                (MARGIN_X + col1Width + 6) +
+                ' ' +
+                (textY - v * 12) +
+                ' Td (' +
+                escPdfWinAnsi(valLines[v]) +
+                ') Tj ET',
+            )
+          }
+
+          curY -= rowH
+        }
+        curY -= 8
+      }
+
+      drawSectionTitle('SEÇÃO 1 — DADOS CADASTRAIS DO PACIENTE')
+      var patientDataRows = [
+        { label: 'Nome Completo:', value: patientName },
+        { label: 'CPF:', value: patientCpf },
+        { label: 'E-mail:', value: patientEmail },
+        { label: 'Telefone / WhatsApp:', value: patientPhone },
+        { label: 'Data de Nascimento:', value: patientBirth },
+        { label: 'RG:', value: patientRg },
+        { label: 'Profissão:', value: patientProf },
+        { label: 'Contato de Emergência:', value: patientEmerg },
+        { label: 'Endereço Residencial:', value: patientAddr },
+        { label: 'Procedimento Escolhido:', value: fTypeLabel },
+      ]
+      drawTwoColumnTable(patientDataRows, 150, CONTENT_WIDTH - 150)
+
+      drawSectionTitle('SEÇÃO 2 — QUESTIONÁRIO DE SAÚDE & ANAMNESE')
+      var questionRows = []
+      try {
+        var rawAnswers = rec.getString('answers')
+        if (rawAnswers) {
+          var answersObj = JSON.parse(rawAnswers)
+          var qLabels = {
+            alergias: 'Alergias a Medicamentos / Cosméticos',
+            cicatrizacao: 'Histórico de Cicatrização / Queloides',
+            doencas_cronicas: 'Doenças Crônicas / Autoimunes',
+            fumante: 'Tabagismo / Fumante Ativo',
+            gestante_ou_lactante: 'Gestante ou Lactante',
+            medicamentos_em_uso: 'Medicamentos de Uso Contínuo',
+            objetivo_labios: 'Objetivo com o Procedimento Labial',
+            procedimentos_anteriores: 'Procedimentos Estéticos Anteriores',
+            queixa_principal: 'Queixa Estética Principal',
+            historico_saude: 'Histórico Geral de Saúde',
+            herpes_labial: 'Histórico de Herpes Labial',
+            uso_anticoagulantes: 'Uso de Anticoagulantes / AAS',
+          }
+          var aKeys = Object.keys(answersObj)
+          for (var k = 0; k < aKeys.length; k++) {
+            var aKey = aKeys[k]
+            var qVal = answersObj[aKey]
+            var qText =
+              qLabels[aKey] ||
+              aKey.replace(/_/g, ' ').replace(/\b\w/g, function (char) {
+                return char.toUpperCase()
+              })
+            var vStr = Array.isArray(qVal) ? qVal.join(', ') : String(qVal)
+            if (typeof qVal === 'boolean') vStr = qVal ? 'Sim' : 'Não'
+            questionRows.push({ label: qText + ':', value: vStr || 'Não informado' })
+          }
+        }
+      } catch (_) {}
+
+      if (questionRows.length === 0) {
+        questionRows.push({
+          label: 'Questionário Clínico:',
+          value: 'Respostas registradas e validadas eletronicamente no prontuário.',
+        })
+      }
+      drawTwoColumnTable(questionRows, 195, CONTENT_WIDTH - 195)
+
+      drawSectionTitle('SEÇÃO 3 — TERMO DE CONSENTIMENTO LIVRE E ESCLARECIDO')
+      ensureSpace(22)
+      curPage.commands.push(
+        'BT /F2 10 Tf 0.514 0.094 0.263 rg ' +
+          MARGIN_X +
+          ' ' +
+          (curY - 10) +
+          ' Td (' +
+          escPdfWinAnsi(termTitle) +
+          ') Tj ET',
+      )
+      curY -= 18
+
+      var clauses = []
+      if (termText) {
+        var rawParas = termText.split(/\n\s*\n|\n(?=[0-9]+\.\s+)/)
+        for (var p = 0; p < rawParas.length; p++) {
+          var pt = rawParas[p].trim()
+          if (pt) clauses.push(pt)
+        }
+      }
+      if (clauses.length === 0) {
+        clauses.push(
+          'Declaração de consentimento integralmente lida, compreendida, confirmada e aceita pelo paciente no momento da assinatura eletrônica.',
+        )
+      }
+
+      for (var c = 0; c < clauses.length; c++) {
+        var clauseText = clauses[c]
+        var lines = wrapText(clauseText, CONTENT_WIDTH, 9.5)
+        var clauseH = lines.length * 13 + 6
+
+        ensureSpace(clauseH)
+
+        for (var cl = 0; cl < lines.length; cl++) {
+          curPage.commands.push(
+            'BT /F1 9.5 Tf 0.20 0.24 0.30 rg ' +
+              MARGIN_X +
+              ' ' +
+              (curY - 11) +
+              ' Td (' +
+              escPdfWinAnsi(lines[cl]) +
+              ') Tj ET',
+          )
+          curY -= 13
+        }
+        curY -= 6
+      }
+
+      drawSectionTitle('SEÇÃO 4 — ASSINATURA ELETRÔNICA DO PACIENTE')
+      var boxHeight = 110
+      ensureSpace(boxHeight + 50)
+
+      curPage.commands.push(
+        'q 0.988 0.950 0.972 rg 0.81 0.40 0.60 RG 1 w ' +
+          MARGIN_X +
+          ' ' +
+          (curY - boxHeight) +
+          ' ' +
+          CONTENT_WIDTH +
+          ' ' +
+          boxHeight +
+          ' re B Q',
+      )
+
+      if (signatureImageObj) {
+        var boxMaxW = 280
+        var boxMaxH = 75
+        var imgW = signatureImageObj.width
+        var imgH = signatureImageObj.height
+        var scale = Math.min(boxMaxW / imgW, boxMaxH / imgH, 1.0)
+        var finalW = Math.round(imgW * scale)
+        var finalH = Math.round(imgH * scale)
+        var imgX = MARGIN_X + (CONTENT_WIDTH - finalW) / 2
+        var imgY = curY - boxHeight + (boxHeight - finalH) / 2 + 10
+
+        curPage.commands.push(
+          'q ' + finalW + ' 0 0 ' + finalH + ' ' + imgX + ' ' + imgY + ' cm /SigImg Do Q',
+        )
+      } else {
+        curPage.commands.push(
+          'BT /F2 11 Tf 0.514 0.094 0.263 rg ' +
+            (MARGIN_X + 130) +
+            ' ' +
+            (curY - 55) +
+            ' Td (' +
+            escPdfWinAnsi('Assinatura Eletrônica Autenticada') +
+            ') Tj ET',
+        )
+      }
+
+      var lineY = curY - boxHeight + 18
+      curPage.commands.push(
+        'q 0.514 0.094 0.263 RG 1.2 w ' +
+          (MARGIN_X + 80) +
+          ' ' +
+          lineY +
+          ' m ' +
+          (MARGIN_X + CONTENT_WIDTH - 80) +
+          ' ' +
+          lineY +
+          ' l S Q',
+      )
+      curPage.commands.push(
+        'BT /F2 9.5 Tf 0.20 0.24 0.30 rg ' +
+          (MARGIN_X + 180) +
+          ' ' +
+          (lineY - 11) +
+          ' Td (' +
+          escPdfWinAnsi('Assinatura do Paciente: ' + patientName) +
+          ') Tj ET',
+      )
+      curPage.commands.push(
+        'BT /F1 8.5 Tf 0.40 0.45 0.50 rg ' +
+          (MARGIN_X + 175) +
+          ' ' +
+          (lineY - 22) +
+          ' Td (' +
+          escPdfWinAnsi('Aceite e Assinatura Registrados em: ' + signedAt) +
+          ') Tj ET',
+      )
+
+      curY -= boxHeight + 32
+
+      drawSectionTitle('SEÇÃO 5 — REGISTRO DE AUDITORIA & INTEGRIDADE')
+      var auditRows = [
+        { label: 'Data e Hora do Aceite:', value: signedAt },
+        { label: 'IP de Origem Real:', value: ipOrigem },
+        { label: 'Dispositivo / Navegador:', value: userAgent },
+        { label: 'Hash SHA-256 de Integridade:', value: docHash },
+        {
+          label: 'Certificação de Autenticidade:',
+          value:
+            'Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.',
+        },
+      ]
+      drawTwoColumnTable(auditRows, 175, CONTENT_WIDTH - 175)
+
+      pages.push(curPage)
+      var totalPages = pages.length
+
+      var clinicN = 'Andresa Souza Clinic'
+      var tResp = 'Andresa Souza — CREFITO-13 000000-F'
+      var cAddr = 'Jardins, Aracaju - SE • Tel: (79) 99980-9134'
+
+      if (settings) {
+        try {
+          if (settings.getString('clinic_name')) clinicN = settings.getString('clinic_name')
+          if (settings.getString('technical_responsible')) {
+            tResp = settings.getString('technical_responsible')
+            if (settings.getString('professional_register')) {
+              tResp += ' — ' + settings.getString('professional_register')
+            }
+          }
+          if (settings.getString('clinic_address') || settings.getString('phone')) {
+            cAddr =
+              (settings.getString('clinic_address') || 'Jardins, Aracaju - SE') +
+              ' • Tel: ' +
+              (settings.getString('phone') || '(79) 99980-9134')
+          }
+        } catch (_) {}
+      }
+
+      var compiledPageStreams = []
+
+      for (var pIdx = 0; pIdx < totalPages; pIdx++) {
+        var pNum = pIdx + 1
+        var streamParts = []
+        streamParts.push('q\n')
+
+        streamParts.push(
+          'BT /F2 13 Tf 0.514 0.094 0.263 rg ' +
+            MARGIN_X +
+            ' ' +
+            HEADER_TOP +
+            ' Td (' +
+            escPdfWinAnsi(clinicN.toUpperCase()) +
+            ') Tj ET\n',
+        )
+        var rightHeader = patientName + ' • ' + signedDateShort
+        var rightHeaderW = measureTextWidth(rightHeader, 8.5)
+        streamParts.push(
+          'BT /F1 8.5 Tf 0.35 0.40 0.48 rg ' +
+            (PAGE_WIDTH - MARGIN_X - rightHeaderW) +
+            ' ' +
+            HEADER_TOP +
+            ' Td (' +
+            escPdfWinAnsi(rightHeader) +
+            ') Tj ET\n',
+        )
+        streamParts.push(
+          'BT /F1 9 Tf 0.30 0.35 0.42 rg ' +
+            MARGIN_X +
+            ' ' +
+            (HEADER_TOP - 13) +
+            ' Td (' +
+            escPdfWinAnsi('Ficha de Anamnese e Termo de Consentimento Assinado') +
+            ') Tj ET\n',
+        )
+        streamParts.push(
+          'q 0.514 0.094 0.263 RG 1 w ' +
+            MARGIN_X +
+            ' ' +
+            (HEADER_TOP - 20) +
+            ' m ' +
+            (PAGE_WIDTH - MARGIN_X) +
+            ' ' +
+            (HEADER_TOP - 20) +
+            ' l S Q\n',
+        )
+
+        var cmds = pages[pIdx].commands
+        for (var ci = 0; ci < cmds.length; ci++) {
+          streamParts.push(cmds[ci] + '\n')
+        }
+
+        var footerLineY = 48
+        streamParts.push(
+          'q 0.80 0.83 0.88 RG 0.5 w ' +
+            MARGIN_X +
+            ' ' +
+            footerLineY +
+            ' m ' +
+            (PAGE_WIDTH - MARGIN_X) +
+            ' ' +
+            footerLineY +
+            ' l S Q\n',
+        )
+        streamParts.push(
+          'BT /F2 8.5 Tf 0.514 0.094 0.263 rg ' +
+            MARGIN_X +
+            ' ' +
+            (footerLineY - 11) +
+            ' Td (' +
+            escPdfWinAnsi(clinicN) +
+            ') Tj ET\n',
+        )
+        streamParts.push(
+          'BT /F1 8.5 Tf 0.35 0.40 0.48 rg ' +
+            (MARGIN_X + measureTextWidth(clinicN, 8.5) + 8) +
+            ' ' +
+            (footerLineY - 11) +
+            ' Td (' +
+            escPdfWinAnsi('• Profissional Responsável: ' + tResp) +
+            ') Tj ET\n',
+        )
+        var footerL2Left = cAddr + ' • Horário de Brasília (UTC-3)'
+        streamParts.push(
+          'BT /F1 8 Tf 0.40 0.45 0.52 rg ' +
+            MARGIN_X +
+            ' ' +
+            (footerLineY - 22) +
+            ' Td (' +
+            escPdfWinAnsi(footerL2Left) +
+            ') Tj ET\n',
+        )
+        var pageStr = 'Página ' + pNum + ' de ' + totalPages
+        var pageStrW = measureTextWidth(pageStr, 8)
+        streamParts.push(
+          'BT /F2 8 Tf 0.30 0.35 0.45 rg ' +
+            (PAGE_WIDTH - MARGIN_X - pageStrW) +
+            ' ' +
+            (footerLineY - 22) +
+            ' Td (' +
+            escPdfWinAnsi(pageStr) +
+            ') Tj ET\n',
+        )
+
+        streamParts.push('Q\n')
+        compiledPageStreams.push(streamParts.join(''))
+      }
+
+      var pdfParts = []
+      var offsets = []
+      pdfParts.push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
+
+      function addPdfObj(objContent) {
+        var curOffset = 0
+        for (var op = 0; op < pdfParts.length; op++) curOffset += pdfParts[op].length
+        offsets.push(curOffset)
+        pdfParts.push(objContent + '\n')
+      }
+
+      addPdfObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj')
+
+      var pageObjIds = []
+      var fontF1Id = 3
+      var fontF2Id = 4
+      var imageObjId = signatureImageObj ? 5 : null
+
+      var curNextId = imageObjId ? 6 : 5
+      for (var pi = 0; pi < totalPages; pi++) {
+        pageObjIds.push(curNextId)
+        curNextId += 2
+      }
+
+      var kidsArrayStr = pageObjIds
+        .map(function (id) {
+          return id + ' 0 R'
+        })
+        .join(' ')
+      addPdfObj(
+        '2 0 obj\n<< /Type /Pages /Kids [' +
+          kidsArrayStr +
+          '] /Count ' +
+          totalPages +
+          ' >>\nendobj',
+      )
+
+      addPdfObj(
+        fontF1Id +
+          ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj',
+      )
+      addPdfObj(
+        fontF2Id +
+          ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj',
+      )
+
+      if (signatureImageObj) {
+        var imgDict =
+          '<< /Type /XObject /Subtype /Image /Width ' +
+          signatureImageObj.width +
+          ' /Height ' +
+          signatureImageObj.height +
+          ' /ColorSpace ' +
+          signatureImageObj.colorSpace +
+          ' /BitsPerComponent ' +
+          signatureImageObj.bits
+        if (signatureImageObj.filter) {
+          imgDict += ' /Filter ' + signatureImageObj.filter
+        }
+        if (signatureImageObj.decodeParms) {
+          imgDict += ' /DecodeParms ' + signatureImageObj.decodeParms
+        }
+        imgDict += ' /Length ' + signatureImageObj.stream.length + ' >>'
+
+        addPdfObj(
+          imageObjId +
+            ' 0 obj\n' +
+            imgDict +
+            '\nstream\n' +
+            signatureImageObj.stream +
+            '\nendstream\nendobj',
+        )
+      }
+
+      var xobjRes = signatureImageObj ? ' /XObject << /SigImg ' + imageObjId + ' 0 R >>' : ''
+      var resourcesDict =
+        '<< /Font << /F1 ' + fontF1Id + ' 0 R /F2 ' + fontF2Id + ' 0 R >>' + xobjRes + ' >>'
+
+      for (var pBuild = 0; pBuild < totalPages; pBuild++) {
+        var pId = pageObjIds[pBuild]
+        var cId = pId + 1
+        var cStream = compiledPageStreams[pBuild]
+
+        addPdfObj(
+          pId +
+            ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' +
+            PAGE_WIDTH +
+            ' ' +
+            PAGE_HEIGHT +
+            '] /Resources ' +
+            resourcesDict +
+            ' /Contents ' +
+            cId +
+            ' 0 R >>\nendobj',
+        )
+
+        addPdfObj(
+          cId +
+            ' 0 obj\n<< /Length ' +
+            cStream.length +
+            ' >>\nstream\n' +
+            cStream +
+            'endstream\nendobj',
+        )
+      }
+
+      var xrefStart = 0
+      for (var xp = 0; xp < pdfParts.length; xp++) xrefStart += pdfParts[xp].length
+
+      var totalObjects = offsets.length
+      var xrefStr = 'xref\n0 ' + (totalObjects + 1) + '\n0000000000 65535 f \n'
+      for (var oi = 0; oi < offsets.length; oi++) {
+        var offS = String(offsets[oi])
+        while (offS.length < 10) offS = '0' + offS
+        xrefStr += offS + ' 00000 n \n'
+      }
+      xrefStr +=
+        'trailer\n<< /Size ' +
+        (totalObjects + 1) +
+        ' /Root 1 0 R >>\nstartxref\n' +
+        xrefStart +
+        '\n%%EOF\n'
+
+      pdfParts.push(xrefStr)
+
+      var rawPdf = pdfParts.join('')
+      var pdfBase64 = encodeBinaryStringToBase64(rawPdf)
+
+      return {
+        rawPdf: rawPdf,
+        base64: pdfBase64,
+        size: rawPdf.length,
+        pages: totalPages,
+      }
+    })(record, settingsRec)
+
+    function formatBr(isoStr) {
+      if (!isoStr) return 'Data não informada'
+      try {
+        var d = new Date(isoStr)
+        var utc = d.getTime() + d.getTimezoneOffset() * 60000
+        var brDate = new Date(utc - 3 * 3600000)
+        var dia = String(brDate.getDate())
+        if (dia.length < 2) dia = '0' + dia
+        var mes = String(brDate.getMonth() + 1)
+        if (mes.length < 2) mes = '0' + mes
+        var ano = brDate.getFullYear()
+        var horas = String(brDate.getHours())
+        if (horas.length < 2) horas = '0' + horas
+        var minutos = String(brDate.getMinutes())
+        if (minutos.length < 2) minutos = '0' + minutos
+        return (
+          dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos + ' (horário de Brasília)'
+        )
+      } catch (_) {
+        return isoStr
+      }
     }
-    streamContent += 'Q\n'
 
-    var pdfParts = []
-    var offsets = []
-    pdfParts.push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
-
-    var addObj = function (content) {
-      var t = 0
-      for (var p = 0; p < pdfParts.length; p++) t += pdfParts[p].length
-      offsets.push(t)
-      pdfParts.push(content + '\n')
+    function getDataCurta(isoStr) {
+      try {
+        var d = isoStr ? new Date(isoStr) : new Date()
+        var utc = d.getTime() + d.getTimezoneOffset() * 60000
+        var brDate = new Date(utc - 3 * 3600000)
+        var dia = String(brDate.getDate())
+        if (dia.length < 2) dia = '0' + dia
+        var mes = String(brDate.getMonth() + 1)
+        if (mes.length < 2) mes = '0' + mes
+        return dia + '-' + mes + '-' + brDate.getFullYear()
+      } catch (_) {
+        return '31-10-2026'
+      }
     }
 
-    addObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj')
-    addObj('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj')
-    addObj(
-      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj',
-    )
-    addObj(
-      '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj',
-    )
-    addObj(
-      '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj',
-    )
-    addObj(
-      '6 0 obj\n<< /Length ' +
-        streamContent.length +
-        ' >>\nstream\n' +
-        streamContent +
-        'endstream\nendobj',
-    )
-
-    var xrefOffset = 0
-    for (var o = 0; o < pdfParts.length; o++) xrefOffset += pdfParts[o].length
-
-    var xref = 'xref\n0 ' + (offsets.length + 1) + '\n0000000000 65535 f \n'
-    for (var k = 0; k < offsets.length; k++) {
-      var offStr = String(offsets[k])
-      while (offStr.length < 10) offStr = '0' + offStr
-      xref += offStr + ' 00000 n \n'
+    function sanitizar(nome) {
+      if (!nome) return 'Paciente'
+      var s = nome
+        .replace(/[áàâãä]/gi, 'a')
+        .replace(/[éèêë]/gi, 'e')
+        .replace(/[íìîï]/gi, 'i')
+        .replace(/[óòôõö]/gi, 'o')
+        .replace(/[úùûü]/gi, 'u')
+        .replace(/[ç]/gi, 'c')
+        .replace(/[ñ]/gi, 'n')
+      return s
+        .replace(/[^a-zA-Z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
     }
-    xref +=
-      'trailer\n<< /Size ' +
-      (offsets.length + 1) +
-      ' /Root 1 0 R >>\nstartxref\n' +
-      xrefOffset +
-      '\n%%EOF\n'
-    pdfParts.push(xref)
-
-    var pdfRaw = pdfParts.join('')
-    var pdfBase64 = toBase64Local(pdfRaw)
-    var pdfSize = pdfRaw.length
 
     var dataCurta = getDataCurta(record.getString('signed_at') || record.getString('created'))
     var nomeSanitizado = sanitizar(patientName)
@@ -1453,12 +3245,13 @@ onRecordAfterUpdateSuccess((e) => {
     var attachments = [
       {
         filename: pdfFilename,
-        content: pdfBase64,
+        content: pdfResult.base64,
       },
     ]
 
     var subject = 'Comprovante: Ficha de Anamnese Assinada - ' + patientName + ' - ' + fTypeLabel
 
+    var sigData = record.getString('signature_data') || ''
     var sigHtml =
       sigData && sigData.indexOf('data:image') === 0
         ? '<img src="' +
@@ -1466,16 +3259,24 @@ onRecordAfterUpdateSuccess((e) => {
           '" alt="Assinatura do paciente" style="max-width: 260px; max-height: 90px; border-bottom: 2px solid #831843; display: inline-block;" />'
         : '<div style="height: 60px; border-bottom: 2px solid #831843; display: inline-block; min-width: 200px; line-height: 60px; font-weight: bold; color: #831843;">Assinado Digitalmente</div>'
 
+    var signedAt = formatBr(record.getString('signed_at') || record.getString('created'))
+    var patientCpf = record.getString('patient_cpf') || 'Não informado'
+    var termTitle =
+      record.getString('accepted_term_title') || 'Termo de Consentimento - ' + fTypeLabel
+    var ipOrigem = record.getString('ip_address') || 'Não informado'
+    var userAgent = record.getString('user_agent') || 'Navegador Web/Mobile'
+    var docHash = record.getString('document_hash') || 'SHA-256 REGISTRADO'
+
     var getHtml = function (isClinica) {
       var intro = isClinica
-        ? 'Ola, <strong>Equipe ' +
+        ? 'Olá, <strong>Equipe ' +
           clinicName +
           '</strong>! Uma nova ficha de anamnese foi preenchida e assinada por <strong>' +
           patientName +
           '</strong>.'
-        : 'Ola, <strong>' +
+        : 'Olá, <strong>' +
           patientName +
-          '</strong>! Confirmamos a conclusao e assinatura digital da sua Ficha de Anamnese e Termo de Consentimento.'
+          '</strong>! Confirmamos a conclusão e assinatura digital da sua Ficha de Anamnese e Termo de Consentimento.'
       return `
         <!DOCTYPE html>
         <html lang="pt-BR">
@@ -1489,10 +3290,10 @@ onRecordAfterUpdateSuccess((e) => {
             <div style="padding: 24px;">
               <p style="font-size: 15px; margin-top: 0;">${intro}</p>
               <p style="font-size: 14px; line-height: 1.5; color: #334155;">
-                Esta e a notificacao oficial registrada para o prontuario digital.
+                Esta é a notificação oficial registrada para o prontuário digital.
               </p>
               <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 13px; color: #166534;">
-                <strong>O documento completo em PDF esta anexado a esta mensagem.</strong>
+                <strong>O documento completo em PDF está anexado a esta mensagem.</strong>
               </div>
               <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
                 <tr style="background-color: #fdf2f8; border-bottom: 1px solid #fbcfe8;">
@@ -1508,11 +3309,15 @@ onRecordAfterUpdateSuccess((e) => {
                   <td style="padding: 10px 12px;">${patientCpf}</td>
                 </tr>
                 <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Data de Nascimento:</td>
+                  <td style="padding: 10px 12px;">${patientBirth}</td>
+                </tr>
+                <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
                   <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Data e Hora do Aceite:</td>
                   <td style="padding: 10px 12px; font-weight: 600; color: #0f172a;">${signedAt}</td>
                 </tr>
                 <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Termo e Versao Aceita:</td>
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Termo e Versão Aceita:</td>
                   <td style="padding: 10px 12px;">${termTitle}</td>
                 </tr>
                 <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -1520,7 +3325,7 @@ onRecordAfterUpdateSuccess((e) => {
                   <td style="padding: 10px 12px; color: #0369a1; font-weight: 600;">${patientEmail}</td>
                 </tr>
                 <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">IP de Origem REAL:</td>
+                  <td style="padding: 10px 12px; font-weight: bold; color: #475569;">IP de Origem Real:</td>
                   <td style="padding: 10px 12px; font-family: monospace;">${ipOrigem}</td>
                 </tr>
                 <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -1538,14 +3343,16 @@ onRecordAfterUpdateSuccess((e) => {
                 <p style="margin: 0; font-size: 12px; font-weight: bold; color: #0f172a;">Hash SHA-256 do Documento:</p>
                 <p style="margin: 4px 0 0 0; font-family: monospace; font-size: 11px; word-break: break-all; color: #334155;">${docHash}</p>
                 <p style="margin: 6px 0 0 0; font-size: 11px; color: #64748b; font-style: italic;">
-                  Codigo de verificacao de integridade - garante que este documento nao foi alterado apos a assinatura.
+                  Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.
                 </p>
               </div>
             </div>
             <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
-              <strong>${clinicName}</strong> &bull; Responsavel Tecnica: ${techResp} (${profReg})<br/>
-              Endereco: ${clinicAddr} &bull; Telefone: ${clinicPhone}<br/>
-              Fuso horario: Horario de Brasilia (UTC-3)
+              ${!isClinica ? '<p style="margin: 0 0 8px 0; font-weight: 600; color: #065f46;">Esta é a sua via do documento assinado. Guarde para seus registros.</p>' : ''}
+              <p style="margin: 0 0 6px 0; font-size: 11px; color: #475569;">Enviado para: <strong>${patientEmail}</strong></p>
+              <strong>${clinicName}</strong> &bull; Profissional Responsável: ${techResp} (${profReg})<br/>
+              Endereço: ${clinicAddr} &bull; Telefone: ${clinicPhone}<br/>
+              Fuso horário: Horário de Brasília (UTC-3)
             </div>
           </div>
         </body></html>
@@ -1587,8 +3394,10 @@ onRecordAfterUpdateSuccess((e) => {
             '. Attachment: ' +
             pdfFilename +
             ' (' +
-            pdfSize +
-            ' bytes)',
+            pdfResult.size +
+            ' bytes, ' +
+            pdfResult.pages +
+            ' paginas)',
         )
       } catch (errPac) {
         console.log('Falha ao enviar e-mail para paciente: ' + errPac.message)
@@ -1625,8 +3434,10 @@ onRecordAfterUpdateSuccess((e) => {
             '. Attachment: ' +
             pdfFilename +
             ' (' +
-            pdfSize +
-            ' bytes)',
+            pdfResult.size +
+            ' bytes, ' +
+            pdfResult.pages +
+            ' paginas)',
         )
       } catch (errCli) {
         console.log('Falha ao enviar e-mail para clinica: ' + errCli.message)
