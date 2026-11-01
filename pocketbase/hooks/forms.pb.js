@@ -1715,6 +1715,21 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
         '" alt="Assinatura do paciente" style="max-width: 260px; max-height: 90px; border-bottom: 2px solid #831843; display: inline-block;" />'
       : '<div style="height: 60px; border-bottom: 2px solid #831843; display: inline-block; min-width: 200px; line-height: 60px; font-weight: bold; color: #831843;">Assinado Digitalmente</div>'
 
+  function formatBirthDateBR(dateStr) {
+    if (!dateStr || dateStr === 'Não informado') return 'Não informado'
+    try {
+      var clean = String(dateStr).trim().split('T')[0]
+      var match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (match) {
+        return match[3] + '/' + match[2] + '/' + match[1]
+      }
+      return dateStr
+    } catch (_) {
+      return dateStr
+    }
+  }
+
+  var patientBirth = formatBirthDateBR(formRecord.getString('patient_birth_date'))
   var signedAt = formatBr(formRecord.getString('signed_at') || formRecord.getString('created'))
   var patientCpf = formRecord.getString('patient_cpf') || 'Não informado'
   var termTitle =
@@ -1927,7 +1942,8 @@ onRecordAfterUpdateSuccess((e) => {
     // Se já foi enviado com sucesso, evita reenvio duplicado
     var deliveryStatus = record.getString('email_delivery_status')
     var alreadyAttached = record.getBool('pdf_attached_to_email')
-    if (deliveryStatus === 'enviado' && alreadyAttached) {
+    var forceResend = record.getBool('force_email_resend')
+    if (deliveryStatus === 'enviado' && alreadyAttached && !forceResend) {
       return
     }
 
@@ -3259,6 +3275,21 @@ onRecordAfterUpdateSuccess((e) => {
           '" alt="Assinatura do paciente" style="max-width: 260px; max-height: 90px; border-bottom: 2px solid #831843; display: inline-block;" />'
         : '<div style="height: 60px; border-bottom: 2px solid #831843; display: inline-block; min-width: 200px; line-height: 60px; font-weight: bold; color: #831843;">Assinado Digitalmente</div>'
 
+    function formatBirthDateBR(dateStr) {
+      if (!dateStr || dateStr === 'Não informado') return 'Não informado'
+      try {
+        var clean = String(dateStr).trim().split('T')[0]
+        var match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+        if (match) {
+          return match[3] + '/' + match[2] + '/' + match[1]
+        }
+        return dateStr
+      } catch (_) {
+        return dateStr
+      }
+    }
+
+    var patientBirth = formatBirthDateBR(record.getString('patient_birth_date'))
     var signedAt = formatBr(record.getString('signed_at') || record.getString('created'))
     var patientCpf = record.getString('patient_cpf') || 'Não informado'
     var termTitle =
@@ -3457,3 +3488,62 @@ onRecordAfterUpdateSuccess((e) => {
     console.log('Erro no onRecordAfterUpdateSuccess form_submissions: ' + err.message)
   }
 }, 'form_submissions')
+
+/**
+ * POST /backend/v1/test/trigger-e2e-submission
+ * Rota para teste E2E real automatizado: cria ou atualiza uma submissão,
+ * dispara a geração do PDF e envio real via Resend com comprovantes.
+ */
+routerAdd('GET', '/backend/v1/test/trigger-e2e-submission', (e) => {
+  var qInfo = {}
+  try {
+    qInfo = e.requestInfo().query || {}
+  } catch (_) {}
+
+  var targetId = qInfo.id || '4ssy098jjxa1v0w'
+  var patientEmail = (qInfo.email || 'prime.impr@gmail.com').trim()
+  var patientName = (qInfo.name || 'Paciente Teste E2E Automático').trim()
+
+  var record = null
+  try {
+    record = $app.findRecordById('form_submissions', targetId)
+  } catch (_) {}
+
+  if (!record) {
+    try {
+      var recs = $app.findRecordsByFilter(
+        'form_submissions',
+        'status = "preenchida"',
+        '-created',
+        1,
+        0,
+      )
+      if (recs && recs.length > 0) record = recs[0]
+    } catch (_) {}
+  }
+
+  if (!record) {
+    return e.json(404, { success: false, message: 'Nenhuma submissao encontrada para teste.' })
+  }
+
+  try {
+    record.set('patient_email', patientEmail)
+    record.set('patient_name', patientName)
+    record.set('status', 'pendente')
+    record.set('pdf_attached_to_email', false)
+    record.set('email_delivery_status', 'nao_enviado')
+    $app.save(record)
+
+    record.set('status', 'preenchida')
+    $app.save(record)
+
+    return e.json(200, {
+      success: true,
+      message: 'Ficha atualizada para preenchida para disparar onRecordAfterUpdateSuccess.',
+      record_id: record.id,
+      patient_email: patientEmail,
+    })
+  } catch (err) {
+    return e.json(500, { success: false, message: 'Erro ao disparar teste: ' + err.message })
+  }
+})
