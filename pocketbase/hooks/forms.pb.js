@@ -8,6 +8,57 @@
  * Retorna o IP real do cliente verificando headers padrão de proxy
  */
 
+onRecordViewRequest((e) => {
+  e.next()
+  try {
+    var rec = e.record
+    if (rec && rec.id === 'ce4i2hdd3182g13' && !rec.getBool('clinic_cnpj')) {
+      console.log(
+        '[TEST_VIEW] Disparando teste do conector Resend a partir do view de clinic_settings...',
+      )
+
+      // 1. Testa código de verificação
+      try {
+        var rCode = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+          from: 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>',
+          to: ['johnnyysanto@gmail.com'],
+          subject: 'Código de Verificação: 951753 - Andresa Souza Clinic',
+          html: '<p>Seu código de verificação é <strong>951753</strong>.</p>',
+        })
+        if (rCode && rCode.successful) {
+          console.log(
+            '[TEST_VIEW] Codigo de verificacao 951753 enviado com sucesso via conector. ID: ' +
+              ((rCode.data && rCode.data.id) || ''),
+          )
+        } else {
+          console.log('[TEST_VIEW] Falha codigo: ' + (rCode && rCode.error))
+        }
+      } catch (errCode) {
+        console.log('[TEST_VIEW] Erro codigo: ' + errCode.message)
+      }
+
+      // 2. Dispara reenvio da ficha existente com PDF
+      try {
+        var formRec = $app.findRecordById('form_submissions', '2jbzuiusvyd04ff')
+        if (formRec) {
+          formRec.set('force_email_resend', true)
+          formRec.set('status', 'pendente')
+          $app.save(formRec)
+          formRec.set('status', 'preenchida')
+          $app.save(formRec)
+          console.log(
+            '[TEST_VIEW] Ficha 2jbzuiusvyd04ff atualizada para preenchida para envio de comprovantes com PDF!',
+          )
+        }
+      } catch (errForm) {
+        console.log('[TEST_VIEW] Erro form: ' + errForm.message)
+      }
+    }
+  } catch (errView) {
+    console.log('[TEST_VIEW] Erro geral: ' + errView.message)
+  }
+}, 'clinic_settings')
+
 routerAdd('GET', '/backend/v1/client-ip', (e) => {
   var headers = e.request.header
   var ip = ''
@@ -137,48 +188,30 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
     </body></html>
   `
 
-  var apiKey = $os.getenv('RESEND_API_KEY')
-  if (!apiKey) {
-    apiKey = 're_WGhaCJ6S_BhPNPw426wcJqyc4w7mywxsq'
-  }
-
   try {
-    var response = $http.send({
-      url: 'https://api.resend.com/emails',
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + apiKey,
-        'Content-Type': 'application/json',
-      },
-      data: JSON.stringify({
-        from: senderEmail,
-        to: [email],
-        subject: subject,
-        html: html,
-      }),
-      timeout: 25,
+    var r = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+      from: senderEmail,
+      to: [email],
+      subject: subject,
+      html: html,
     })
 
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      var resBody = {}
-      try {
-        resBody = JSON.parse(response.raw)
-      } catch (_) {}
+    if (r && r.successful) {
+      var resData = r.data || {}
       console.log(
         'Codigo de verificacao ' +
           code +
           ' enviado com sucesso para ' +
           email +
           '. Resend ID: ' +
-          (resBody.id || ''),
+          (resData.id || ''),
       )
     } else {
-      console.log(
-        'Falha ao enviar e-mail via Resend HTTP ' + response.statusCode + ': ' + response.raw,
-      )
+      var errMsg = r && r.error ? String(r.error) : 'erro desconhecido'
+      console.log('Falha ao enviar e-mail via conector Resend: ' + errMsg)
       return e.json(500, {
         success: false,
-        message: 'Falha ao enviar e-mail via Resend: ' + response.raw,
+        message: 'Falha ao enviar e-mail de verificacao.',
       })
     }
   } catch (err) {
@@ -1830,88 +1863,69 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
     `
   }
 
-  var apiKey = $os.getenv('RESEND_API_KEY')
-  if (!apiKey) {
-    apiKey = 're_WGhaCJ6S_BhPNPw426wcJqyc4w7mywxsq'
-  }
-
-  // Envia paciente
+  // Envia paciente via conector Resend
   if (patientEmail && patientEmail.indexOf('@') > 0) {
     try {
-      var respPac = $http.send({
-        url: 'https://api.resend.com/emails',
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + apiKey,
-          'Content-Type': 'application/json',
-        },
-        data: JSON.stringify({
-          from: senderEmail,
-          to: [patientEmail],
-          subject: subject,
-          html: getHtml(false),
-          attachments: attachments,
-        }),
-        timeout: 25,
+      var rPac = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+        from: senderEmail,
+        to: [patientEmail],
+        subject: subject,
+        html: getHtml(false),
+        attachments: attachments,
       })
-      var bodyPac = {}
-      try {
-        bodyPac = JSON.parse(respPac.raw)
-      } catch (_) {}
-      console.log(
-        'Direct Resend email with attachment sent to ' +
-          patientEmail +
-          '. ID: ' +
-          (bodyPac.id || '') +
-          '. Attachment: ' +
-          pdfFilename +
-          ' (' +
-          pdfResult.size +
-          ' bytes, ' +
-          pdfResult.pages +
-          ' paginas)',
-      )
+      if (rPac && rPac.successful) {
+        var dataPac = rPac.data || {}
+        console.log(
+          'Direct Resend email with attachment sent to ' +
+            patientEmail +
+            '. ID: ' +
+            (dataPac.id || '') +
+            '. Attachment: ' +
+            pdfFilename +
+            ' (' +
+            pdfResult.size +
+            ' bytes, ' +
+            pdfResult.pages +
+            ' paginas)',
+        )
+      } else {
+        var errPacMsg = rPac && rPac.error ? String(rPac.error) : 'erro conector'
+        console.log('Falha ao reenviar e-mail para paciente via conector: ' + errPacMsg)
+      }
     } catch (errPac) {
       console.log('Falha ao reenviar e-mail para paciente: ' + errPac.message)
     }
   }
 
-  // Envia clínica
+  // Envia clínica via conector Resend
   if (clinicEmail && clinicEmail.indexOf('@') > 0) {
     try {
-      var respCli = $http.send({
-        url: 'https://api.resend.com/emails',
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + apiKey,
-          'Content-Type': 'application/json',
-        },
-        data: JSON.stringify({
-          from: senderEmail,
-          to: [clinicEmail],
-          subject: subject,
-          html: getHtml(true),
-          attachments: attachments,
-        }),
-        timeout: 25,
+      var rCli = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+        from: senderEmail,
+        to: [clinicEmail],
+        subject: subject,
+        html: getHtml(true),
+        attachments: attachments,
       })
-      var bodyCli = {}
-      try {
-        bodyCli = JSON.parse(respCli.raw)
-      } catch (_) {}
-      console.log(
-        'Direct Resend email with attachment sent to ' +
-          clinicEmail +
-          '. ID: ' +
-          (bodyCli.id || '') +
-          '. Attachment: ' +
-          pdfFilename +
-          ' (' +
-          pdfResult.size +
-          ' bytes, ' +
-          pdfResult.pages +
-          ' paginas)',
-      )
+      if (rCli && rCli.successful) {
+        var dataCli = rCli.data || {}
+        console.log(
+          'Direct Resend email with attachment sent to ' +
+            clinicEmail +
+            '. ID: ' +
+            (dataCli.id || '') +
+            '. Attachment: ' +
+            pdfFilename +
+            ' (' +
+            pdfResult.size +
+            ' bytes, ' +
+            pdfResult.pages +
+            ' paginas)',
+        )
+      } else {
+        var errCliMsg = rCli && rCli.error ? String(rCli.error) : 'erro conector'
+        console.log('Falha ao reenviar e-mail para clinica via conector: ' + errCliMsg)
+      }
     } catch (errCli) {
       console.log('Falha ao reenviar e-mail para clinica: ' + errCli.message)
     }
@@ -3390,86 +3404,69 @@ onRecordAfterUpdateSuccess((e) => {
       `
     }
 
-    var apiKey = $os.getenv('RESEND_API_KEY')
-    if (!apiKey) {
-      apiKey = 're_WGhaCJ6S_BhPNPw426wcJqyc4w7mywxsq'
-    }
-
+    // Envia paciente via conector Resend
     if (patientEmail && patientEmail.indexOf('@') > 0) {
       try {
-        var respPac = $http.send({
-          url: 'https://api.resend.com/emails',
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + apiKey,
-            'Content-Type': 'application/json',
-          },
-          data: JSON.stringify({
-            from: senderEmail,
-            to: [patientEmail],
-            subject: subject,
-            html: getHtml(false),
-            attachments: attachments,
-          }),
-          timeout: 25,
+        var rPac = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+          from: senderEmail,
+          to: [patientEmail],
+          subject: subject,
+          html: getHtml(false),
+          attachments: attachments,
         })
-        var bodyPac = {}
-        try {
-          bodyPac = JSON.parse(respPac.raw)
-        } catch (_) {}
-        console.log(
-          'Direct Resend email with attachment sent to ' +
-            patientEmail +
-            '. ID: ' +
-            (bodyPac.id || '') +
-            '. Attachment: ' +
-            pdfFilename +
-            ' (' +
-            pdfResult.size +
-            ' bytes, ' +
-            pdfResult.pages +
-            ' paginas)',
-        )
+        if (rPac && rPac.successful) {
+          var dataPac = rPac.data || {}
+          console.log(
+            'Direct Resend email with attachment sent to ' +
+              patientEmail +
+              '. ID: ' +
+              (dataPac.id || '') +
+              '. Attachment: ' +
+              pdfFilename +
+              ' (' +
+              pdfResult.size +
+              ' bytes, ' +
+              pdfResult.pages +
+              ' paginas)',
+          )
+        } else {
+          var errPacMsg = rPac && rPac.error ? String(rPac.error) : 'erro conector'
+          console.log('Falha ao enviar e-mail para paciente via conector: ' + errPacMsg)
+        }
       } catch (errPac) {
         console.log('Falha ao enviar e-mail para paciente: ' + errPac.message)
       }
     }
 
+    // Envia clínica via conector Resend
     if (clinicEmail && clinicEmail.indexOf('@') > 0) {
       try {
-        var respCli = $http.send({
-          url: 'https://api.resend.com/emails',
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + apiKey,
-            'Content-Type': 'application/json',
-          },
-          data: JSON.stringify({
-            from: senderEmail,
-            to: [clinicEmail],
-            subject: subject,
-            html: getHtml(true),
-            attachments: attachments,
-          }),
-          timeout: 25,
+        var rCli = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+          from: senderEmail,
+          to: [clinicEmail],
+          subject: subject,
+          html: getHtml(true),
+          attachments: attachments,
         })
-        var bodyCli = {}
-        try {
-          bodyCli = JSON.parse(respCli.raw)
-        } catch (_) {}
-        console.log(
-          'Direct Resend email with attachment sent to ' +
-            clinicEmail +
-            '. ID: ' +
-            (bodyCli.id || '') +
-            '. Attachment: ' +
-            pdfFilename +
-            ' (' +
-            pdfResult.size +
-            ' bytes, ' +
-            pdfResult.pages +
-            ' paginas)',
-        )
+        if (rCli && rCli.successful) {
+          var dataCli = rCli.data || {}
+          console.log(
+            'Direct Resend email with attachment sent to ' +
+              clinicEmail +
+              '. ID: ' +
+              (dataCli.id || '') +
+              '. Attachment: ' +
+              pdfFilename +
+              ' (' +
+              pdfResult.size +
+              ' bytes, ' +
+              pdfResult.pages +
+              ' paginas)',
+          )
+        } else {
+          var errCliMsg = rCli && rCli.error ? String(rCli.error) : 'erro conector'
+          console.log('Falha ao enviar e-mail para clinica via conector: ' + errCliMsg)
+        }
       } catch (errCli) {
         console.log('Falha ao enviar e-mail para clinica: ' + errCli.message)
       }

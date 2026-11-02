@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import pb from '@/lib/pocketbase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Sparkles,
@@ -13,6 +15,17 @@ import {
 } from 'lucide-react'
 
 export default function Index() {
+  // Trigger do teste de conector para validar envio nos logs
+  const [testFired, setTestFired] = useState(false)
+  useEffect(() => {
+    if (!testFired) {
+      setTestFired(true)
+      pb.collection('clinic_settings')
+        .getOne('ce4i2hdd3182g13')
+        .catch(() => {})
+    }
+  }, [testFired])
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-rose-50/80 via-white to-rose-100/40 flex flex-col">
       {/* Navbar */}
