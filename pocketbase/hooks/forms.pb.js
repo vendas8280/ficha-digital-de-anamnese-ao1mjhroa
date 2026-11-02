@@ -8,56 +8,7 @@
  * Retorna o IP real do cliente verificando headers padrão de proxy
  */
 
-onRecordViewRequest((e) => {
-  e.next()
-  try {
-    var rec = e.record
-    if (rec && rec.id === 'ce4i2hdd3182g13' && !rec.getBool('clinic_cnpj')) {
-      console.log(
-        '[TEST_VIEW] Disparando teste do conector Resend a partir do view de clinic_settings...',
-      )
-
-      // 1. Testa código de verificação
-      try {
-        var rCode = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-          from: 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>',
-          to: ['johnnyysanto@gmail.com'],
-          subject: 'Código de Verificação: 951753 - Andresa Souza Clinic',
-          html: '<p>Seu código de verificação é <strong>951753</strong>.</p>',
-        })
-        if (rCode && rCode.successful) {
-          console.log(
-            '[TEST_VIEW] Codigo de verificacao 951753 enviado com sucesso via conector. ID: ' +
-              ((rCode.data && rCode.data.id) || ''),
-          )
-        } else {
-          console.log('[TEST_VIEW] Falha codigo: ' + (rCode && rCode.error))
-        }
-      } catch (errCode) {
-        console.log('[TEST_VIEW] Erro codigo: ' + errCode.message)
-      }
-
-      // 2. Dispara reenvio da ficha existente com PDF
-      try {
-        var formRec = $app.findRecordById('form_submissions', '2jbzuiusvyd04ff')
-        if (formRec) {
-          formRec.set('force_email_resend', true)
-          formRec.set('status', 'pendente')
-          $app.save(formRec)
-          formRec.set('status', 'preenchida')
-          $app.save(formRec)
-          console.log(
-            '[TEST_VIEW] Ficha 2jbzuiusvyd04ff atualizada para preenchida para envio de comprovantes com PDF!',
-          )
-        }
-      } catch (errForm) {
-        console.log('[TEST_VIEW] Erro form: ' + errForm.message)
-      }
-    }
-  } catch (errView) {
-    console.log('[TEST_VIEW] Erro geral: ' + errView.message)
-  }
-}, 'clinic_settings')
+// Testes automáticos em onRecordViewRequest removidos para não disparar envios espúrios
 
 routerAdd('GET', '/backend/v1/client-ip', (e) => {
   var headers = e.request.header
@@ -209,14 +160,41 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
     } else {
       var errMsg = r && r.error ? String(r.error) : 'erro desconhecido'
       console.log('Falha ao enviar e-mail via conector Resend: ' + errMsg)
+      var clientMsg =
+        'Não foi possível enviar o código por e-mail no momento. Por favor, tente novamente em instantes.'
+      if (
+        errMsg.indexOf('daily_quota_exceeded') !== -1 ||
+        errMsg.indexOf('quota') !== -1 ||
+        errMsg.indexOf('429') !== -1
+      ) {
+        clientMsg =
+          'Limite diário de envio de e-mails da conta Resend atingido (cota diária esgotada). Entre em contato com a clínica ou tente novamente mais tarde.'
+      } else if (
+        errMsg.indexOf('API key') !== -1 ||
+        errMsg.indexOf('401') !== -1 ||
+        errMsg.indexOf('403') !== -1 ||
+        errMsg.indexOf('restricted') !== -1
+      ) {
+        clientMsg =
+          'Falha de autenticação no serviço de e-mail (Resend). A clínica precisa verificar a conexão da conta.'
+      }
       return e.json(500, {
         success: false,
-        message: 'Falha ao enviar e-mail de verificacao.',
+        message: clientMsg,
+        detail: errMsg,
       })
     }
   } catch (err) {
     console.log('Falha ao enviar e-mail do codigo de verificacao: ' + err.message)
-    return e.json(500, { success: false, message: 'Falha ao enviar e-mail: ' + err.message })
+    var clientErr = 'Falha ao enviar e-mail: ' + err.message
+    if (
+      err.message &&
+      (err.message.indexOf('daily_quota_exceeded') !== -1 || err.message.indexOf('quota') !== -1)
+    ) {
+      clientErr =
+        'Limite diário de envio de e-mails da conta Resend atingido (cota diária esgotada). Entre em contato com a clínica ou tente novamente mais tarde.'
+    }
+    return e.json(500, { success: false, message: clientErr })
   }
 
   // Registra auditoria
@@ -1953,11 +1931,15 @@ onRecordAfterUpdateSuccess((e) => {
       return
     }
 
-    // Se já foi enviado com sucesso, evita reenvio duplicado
+    // Se já foi enviado com sucesso ou se já foi processado neste ciclo, evita reenvio duplicado/loop
     var deliveryStatus = record.getString('email_delivery_status')
     var alreadyAttached = record.getBool('pdf_attached_to_email')
     var forceResend = record.getBool('force_email_resend')
-    if (deliveryStatus === 'enviado' && alreadyAttached && !forceResend) {
+    if (
+      (deliveryStatus === 'enviado' || deliveryStatus === 'processado') &&
+      alreadyAttached &&
+      !forceResend
+    ) {
       return
     }
 
@@ -3474,6 +3456,7 @@ onRecordAfterUpdateSuccess((e) => {
 
     try {
       record.set('pdf_attached_to_email', true)
+      record.set('force_email_resend', false)
       record.set('email_delivery_status', 'enviado')
       record.set('email_sent_at', new Date().toISOString())
       record.set('email_delivery_error', '')

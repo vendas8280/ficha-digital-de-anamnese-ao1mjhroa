@@ -748,6 +748,15 @@ export default function PatientFormPage() {
                         ✓ Código enviado! Verifique sua caixa de entrada e spam.
                       </p>
                     )}
+                    {codeError && !codeSent && (
+                      <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 text-left space-y-1">
+                        <p className="font-semibold flex items-center gap-1.5 text-red-900">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                          Não foi possível enviar o código
+                        </p>
+                        <p className="text-[11px] leading-relaxed">{codeError}</p>
+                      </div>
+                    )}
                   </div>
 
                   {codeSent && (
