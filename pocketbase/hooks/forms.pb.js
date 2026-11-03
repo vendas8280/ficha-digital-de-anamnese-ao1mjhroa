@@ -1709,10 +1709,14 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
   var nomeSanitizado = sanitizar(patientName)
   var pdfFilename = 'Ficha-Anamnese-' + nomeSanitizado + '-' + dataCurta + '.pdf'
 
+  var cleanPdfBase64 = String(pdfResult.base64 || '').replace(/[\r\n\s]/g, '')
+  if (cleanPdfBase64.indexOf('base64,') !== -1) {
+    cleanPdfBase64 = cleanPdfBase64.substring(cleanPdfBase64.indexOf('base64,') + 7)
+  }
   var attachments = [
     {
       filename: pdfFilename,
-      content: pdfResult.base64,
+      content: cleanPdfBase64,
     },
   ]
 
@@ -1849,7 +1853,7 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
         to: [patientEmail],
         subject: subject,
         html: getHtml(false),
-        attachments: attachments,
+        attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
       })
       if (rPac && rPac.successful) {
         var dataPac = rPac.data || {}
@@ -1883,7 +1887,7 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
         to: [clinicEmail],
         subject: subject,
         html: getHtml(true),
-        attachments: attachments,
+        attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
       })
       if (rCli && rCli.successful) {
         var dataCli = rCli.data || {}
@@ -3254,10 +3258,14 @@ onRecordAfterUpdateSuccess((e) => {
     var nomeSanitizado = sanitizar(patientName)
     var pdfFilename = 'Ficha-Anamnese-' + nomeSanitizado + '-' + dataCurta + '.pdf'
 
+    var cleanPdfBase64 = String(pdfResult.base64 || '').replace(/[\r\n\s]/g, '')
+    if (cleanPdfBase64.indexOf('base64,') !== -1) {
+      cleanPdfBase64 = cleanPdfBase64.substring(cleanPdfBase64.indexOf('base64,') + 7)
+    }
     var attachments = [
       {
         filename: pdfFilename,
-        content: pdfResult.base64,
+        content: cleanPdfBase64,
       },
     ]
 
@@ -3394,7 +3402,7 @@ onRecordAfterUpdateSuccess((e) => {
           to: [patientEmail],
           subject: subject,
           html: getHtml(false),
-          attachments: attachments,
+          attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
         })
         if (rPac && rPac.successful) {
           var dataPac = rPac.data || {}
@@ -3428,7 +3436,7 @@ onRecordAfterUpdateSuccess((e) => {
           to: [clinicEmail],
           subject: subject,
           html: getHtml(true),
-          attachments: attachments,
+          attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
         })
         if (rCli && rCli.successful) {
           var dataCli = rCli.data || {}
