@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { formsService } from '@/services/forms'
+import { formsService, appointmentsService } from '@/services/forms'
 import type { FormSubmissionRecord } from '@/services/forms'
 import type { FormType } from '@/types/form'
 import { formatDateBR } from '@/lib/formatters'
@@ -46,7 +46,10 @@ import {
   Loader2,
   Send,
   Trash2,
+  CalendarDays,
 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 
 export default function DashboardPage() {
@@ -69,6 +72,29 @@ export default function DashboardPage() {
   const [createdLinkUrl, setCreatedLinkUrl] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [resendingId, setResendingId] = useState<string | null>(null)
+
+  // Agendamento opcional (seção do gerador de ficha)
+  const [showScheduling, setShowScheduling] = useState(false)
+  const [schedDate, setSchedDate] = useState('') // YYYY-MM-DD
+  const [schedTime, setSchedTime] = useState('') // HH:MM
+  const [schedProcedure, setSchedProcedure] = useState<FormType>('geral')
+  const [notifyPatient, setNotifyPatient] = useState(true)
+  const [notifyClinic, setNotifyClinic] = useState(true)
+
+  const resetScheduling = () => {
+    setShowScheduling(false)
+    setSchedDate('')
+    setSchedTime('')
+    setSchedProcedure('geral')
+    setNotifyPatient(true)
+    setNotifyClinic(true)
+  }
+
+  // Ex.: "2026-11-05" -> "05/11/2026" (sem deslocamento de fuso)
+  const formatSchedDateBR = (iso: string) => {
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : iso
+  }
 
   // Redirect if not logged in
   useEffect(() => {
@@ -123,6 +149,31 @@ export default function DashboardPage() {
         newPatientName.trim() || undefined,
         newPatientPhone.trim() || undefined,
       )
+
+      // Agendamento é OPCIONAL: só grava se a data foi preenchida,
+      // e um erro aqui não impede o envio da ficha
+      if (showScheduling && schedDate.trim()) {
+        try {
+          await appointmentsService.createAppointment({
+            form_submission: created.id,
+            patient_name: newPatientName.trim() || undefined,
+            patient_phone: newPatientPhone.trim() || undefined,
+            procedure_date: schedDate,
+            procedure_time: schedTime.trim() || undefined,
+            procedure: schedProcedure,
+            notify_patient: notifyPatient,
+            notify_clinic: notifyClinic,
+          })
+        } catch (err) {
+          console.warn('Falha ao salvar agendamento:', err)
+          toast({
+            title: 'Ficha criada, mas o agendamento não foi salvo',
+            description: 'A ficha foi gerada normalmente. Tente cadastrar o agendamento novamente.',
+            variant: 'destructive',
+          })
+        }
+      }
+
       const url = `${window.location.origin}/f/${created.token}`
       setCreatedLinkUrl(url)
       toast({
@@ -354,6 +405,7 @@ export default function DashboardPage() {
                   setCreatedLinkUrl(null)
                   setNewPatientName('')
                   setNewPatientPhone('')
+                  resetScheduling()
                 }
               }}
             >
@@ -424,6 +476,120 @@ export default function DashboardPage() {
                         onChange={(e) => setNewPatientPhone(e.target.value)}
                         className="text-xs"
                       />
+                    </div>
+
+                    {/* Seção OPCIONAL: Agendamento do procedimento */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowScheduling((v) => !v)}
+                        className="flex w-full items-center justify-between gap-2 text-left"
+                      >
+                        <span className="flex items-center gap-2">
+                          <CalendarDays className="w-4 h-4 text-rose-800" />
+                          <span className="text-xs font-semibold text-slate-800">
+                            Agendamento do procedimento
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] border-slate-300 text-slate-500"
+                          >
+                            opcional
+                          </Badge>
+                        </span>
+                        <span className="text-[10px] font-medium text-rose-800">
+                          {showScheduling ? 'Ocultar' : 'Preencher'}
+                        </span>
+                      </button>
+
+                      {showScheduling && (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="schedData" className="text-xs font-semibold">
+                                Data do procedimento
+                              </Label>
+                              <Input
+                                id="schedData"
+                                type="date"
+                                value={schedDate}
+                                onChange={(e) => setSchedDate(e.target.value)}
+                                className="text-xs"
+                              />
+                              {schedDate && (
+                                <p className="text-[10px] text-slate-500">
+                                  {formatSchedDateBR(schedDate)}
+                                </p>
+                              )}
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="schedHora" className="text-xs font-semibold">
+                                Hora do procedimento
+                              </Label>
+                              <Input
+                                id="schedHora"
+                                type="time"
+                                value={schedTime}
+                                onChange={(e) => setSchedTime(e.target.value)}
+                                className="text-xs"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="schedProc" className="text-xs font-semibold">
+                              Procedimento
+                            </Label>
+                            <Select
+                              value={schedProcedure}
+                              onValueChange={(val) => setSchedProcedure(val as FormType)}
+                            >
+                              <SelectTrigger id="schedProc" className="text-xs">
+                                <SelectValue placeholder="Selecione o procedimento" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="geral" className="text-xs">
+                                  Anamnese Geral (Faciais e Corporais)
+                                </SelectItem>
+                                <SelectItem value="labios" className="text-xs">
+                                  Lábios & Micropigmentação Labial
+                                </SelectItem>
+                                <SelectItem value="botox" className="text-xs">
+                                  Toxina Botulínica (Botox)
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <Label
+                              htmlFor="lembrarPaciente"
+                              className="text-xs font-medium text-slate-700 cursor-pointer"
+                            >
+                              Enviar lembrete ao paciente
+                            </Label>
+                            <Switch
+                              id="lembrarPaciente"
+                              checked={notifyPatient}
+                              onCheckedChange={setNotifyPatient}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <Label
+                              htmlFor="lembrarClinica"
+                              className="text-xs font-medium text-slate-700 cursor-pointer"
+                            >
+                              Enviar lembrete para a clínica
+                            </Label>
+                            <Switch
+                              id="lembrarClinica"
+                              checked={notifyClinic}
+                              onCheckedChange={setNotifyClinic}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <DialogFooter className="pt-2">

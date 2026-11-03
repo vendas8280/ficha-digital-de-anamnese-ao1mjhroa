@@ -34,6 +34,22 @@ export interface FormSubmissionRecord {
   updated: string
 }
 
+export interface ProcedureAppointmentRecord {
+  id: string
+  form_submission: string
+  patient_name?: string
+  patient_phone?: string
+  patient_email?: string
+  procedure_date?: string
+  procedure_time?: string
+  procedure?: string
+  notify_patient?: boolean
+  notify_clinic?: boolean
+  status?: string
+  created: string
+  updated: string
+}
+
 export interface ClinicSettingsRecord {
   id: string
   clinic_name: string
@@ -253,6 +269,40 @@ export const formsService = {
   // Delete form (clinic only)
   async deleteForm(id: string): Promise<boolean> {
     return await pb.collection('form_submissions').delete(id)
+  },
+}
+
+export const appointmentsService = {
+  // Cria o registro de agendamento opcional vinculado à ficha (se data preenchida)
+  async createAppointment(data: {
+    form_submission: string
+    patient_name?: string
+    patient_phone?: string
+    patient_email?: string
+    procedure_date?: string
+    procedure_time?: string
+    procedure?: string
+    notify_patient?: boolean
+    notify_clinic?: boolean
+  }): Promise<ProcedureAppointmentRecord> {
+    const record = await pb.collection('procedure_appointments').create({
+      ...data,
+      status: 'agendado',
+    })
+    return record as unknown as ProcedureAppointmentRecord
+  },
+
+  // Lista agendamentos de uma ficha
+  async listByForm(formSubmissionId: string): Promise<ProcedureAppointmentRecord[]> {
+    try {
+      const records = await pb.collection('procedure_appointments').getFullList({
+        filter: `form_submission = "${formSubmissionId}"`,
+        sort: '-created',
+      })
+      return records as unknown as ProcedureAppointmentRecord[]
+    } catch {
+      return []
+    }
   },
 }
 

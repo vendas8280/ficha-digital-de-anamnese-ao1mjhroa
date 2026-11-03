@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-03T04:18:34.182Z",
+  "generatedAt": "2026-11-03T23:38:57.299Z",
   "collections": [
     {
       "name": "users",
@@ -461,6 +461,106 @@
       ],
       "indexes": [
         "CREATE INDEX idx_verif_form_email ON email_verifications (form_submission, email)"
+      ]
+    },
+    {
+      "name": "procedure_appointments",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "form_submission",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "form_submissions"
+        },
+        {
+          "name": "patient_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_phone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "patient_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "procedure_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "procedure_time",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "procedure",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notify_patient",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notify_clinic",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": [
+            "agendado",
+            "confirmado",
+            "remarcado",
+            "realizado",
+            "faltou",
+            "cancelado"
+          ]
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_appointment_form ON procedure_appointments (form_submission)",
+        "CREATE INDEX idx_appointment_date_time ON procedure_appointments (procedure_date, procedure_time)"
       ]
     }
   ]
