@@ -46,6 +46,7 @@ export interface ProcedureAppointmentRecord {
   notify_patient?: boolean
   notify_clinic?: boolean
   status?: string
+  reminder_state?: string
   created: string
   updated: string
 }
@@ -288,6 +289,7 @@ export const appointmentsService = {
     const record = await pb.collection('procedure_appointments').create({
       ...data,
       status: 'agendado',
+      reminder_state: 'aguardando ficha',
     })
     return record as unknown as ProcedureAppointmentRecord
   },

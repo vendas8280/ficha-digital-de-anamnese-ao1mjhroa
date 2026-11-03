@@ -77,7 +77,6 @@ export default function DashboardPage() {
   const [showScheduling, setShowScheduling] = useState(false)
   const [schedDate, setSchedDate] = useState('') // YYYY-MM-DD
   const [schedTime, setSchedTime] = useState('') // HH:MM
-  const [schedProcedure, setSchedProcedure] = useState<FormType>('geral')
   const [notifyPatient, setNotifyPatient] = useState(true)
   const [notifyClinic, setNotifyClinic] = useState(true)
 
@@ -85,7 +84,6 @@ export default function DashboardPage() {
     setShowScheduling(false)
     setSchedDate('')
     setSchedTime('')
-    setSchedProcedure('geral')
     setNotifyPatient(true)
     setNotifyClinic(true)
   }
@@ -142,6 +140,31 @@ export default function DashboardPage() {
   // Link generation handler
   const handleCreateLink = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // A2: validação do agendamento opcional — antes de criar qualquer coisa
+    if (showScheduling && (schedDate.trim() || schedTime.trim())) {
+      // data e hora precisam ir juntas: uma preenchida obriga a outra
+      if (!schedDate.trim() || !schedTime.trim()) {
+        toast({
+          title: 'Agendamento incompleto',
+          description: 'Preencha data e hora do procedimento, ou deixe os dois em branco.',
+          variant: 'destructive',
+        })
+        return
+      }
+      // data do agendamento não pode ser no passado (comparação local YYYY-MM-DD)
+      const today = new Date()
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      if (schedDate.trim() < todayStr) {
+        toast({
+          title: 'Data inválida',
+          description: 'A data do procedimento não pode ser no passado.',
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
     setCreatingLink(true)
     try {
       const created = await formsService.createLink(
@@ -160,7 +183,7 @@ export default function DashboardPage() {
             patient_phone: newPatientPhone.trim() || undefined,
             procedure_date: schedDate,
             procedure_time: schedTime.trim() || undefined,
-            procedure: schedProcedure,
+            procedure: newFormType,
             notify_patient: notifyPatient,
             notify_clinic: notifyClinic,
           })
@@ -534,31 +557,6 @@ export default function DashboardPage() {
                                 className="text-xs"
                               />
                             </div>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <Label htmlFor="schedProc" className="text-xs font-semibold">
-                              Procedimento
-                            </Label>
-                            <Select
-                              value={schedProcedure}
-                              onValueChange={(val) => setSchedProcedure(val as FormType)}
-                            >
-                              <SelectTrigger id="schedProc" className="text-xs">
-                                <SelectValue placeholder="Selecione o procedimento" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="geral" className="text-xs">
-                                  Anamnese Geral (Faciais e Corporais)
-                                </SelectItem>
-                                <SelectItem value="labios" className="text-xs">
-                                  Lábios & Micropigmentação Labial
-                                </SelectItem>
-                                <SelectItem value="botox" className="text-xs">
-                                  Toxina Botulínica (Botox)
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
                           </div>
 
                           <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
