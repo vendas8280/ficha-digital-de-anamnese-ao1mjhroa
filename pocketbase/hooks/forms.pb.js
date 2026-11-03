@@ -1845,20 +1845,39 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
     `
   }
 
-  // Envia paciente via conector Resend
-  if (patientEmail && patientEmail.indexOf('@') > 0) {
+  // Envia paciente direto via API REST Resend com anexo
+  var resendApiKey = $os.getenv('RESEND_API_KEY')
+  if (!resendApiKey) {
+    console.log('ATENCAO: Segredo RESEND_API_KEY nao configurado no ambiente!')
+  }
+
+  if (patientEmail && patientEmail.indexOf('@') > 0 && resendApiKey) {
     try {
-      var rPac = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-        from: senderEmail,
-        to: [patientEmail],
-        subject: subject,
-        html: getHtml(false),
-        attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
+      var resPac = $http.send({
+        url: 'https://api.resend.com/emails',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + resendApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: senderEmail,
+          to: [patientEmail],
+          subject: subject,
+          html: getHtml(false),
+          attachments: [
+            {
+              filename: pdfFilename,
+              content: cleanPdfBase64,
+            },
+          ],
+        }),
       })
-      if (rPac && rPac.successful) {
-        var dataPac = rPac.data || {}
+
+      if (resPac.statusCode >= 200 && resPac.statusCode < 300) {
+        var dataPac = resPac.json || {}
         console.log(
-          'Direct Resend email with attachment sent to ' +
+          'Direct Resend REST API email with attachment sent to ' +
             patientEmail +
             '. ID: ' +
             (dataPac.id || '') +
@@ -1871,28 +1890,46 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
             ' paginas)',
         )
       } else {
-        var errPacMsg = rPac && rPac.error ? String(rPac.error) : 'erro conector'
-        console.log('Falha ao reenviar e-mail para paciente via conector: ' + errPacMsg)
+        console.log(
+          'Falha ao reenviar e-mail para paciente via Resend API (' +
+            resPac.statusCode +
+            '): ' +
+            resPac.raw,
+        )
       }
     } catch (errPac) {
       console.log('Falha ao reenviar e-mail para paciente: ' + errPac.message)
     }
   }
 
-  // Envia clínica via conector Resend
-  if (clinicEmail && clinicEmail.indexOf('@') > 0) {
+  // Envia clínica direto via API REST Resend com anexo
+  if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
     try {
-      var rCli = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-        from: senderEmail,
-        to: [clinicEmail],
-        subject: subject,
-        html: getHtml(true),
-        attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
+      var resCli = $http.send({
+        url: 'https://api.resend.com/emails',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + resendApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: senderEmail,
+          to: [clinicEmail],
+          subject: subject,
+          html: getHtml(true),
+          attachments: [
+            {
+              filename: pdfFilename,
+              content: cleanPdfBase64,
+            },
+          ],
+        }),
       })
-      if (rCli && rCli.successful) {
-        var dataCli = rCli.data || {}
+
+      if (resCli.statusCode >= 200 && resCli.statusCode < 300) {
+        var dataCli = resCli.json || {}
         console.log(
-          'Direct Resend email with attachment sent to ' +
+          'Direct Resend REST API email with attachment sent to ' +
             clinicEmail +
             '. ID: ' +
             (dataCli.id || '') +
@@ -1905,8 +1942,12 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
             ' paginas)',
         )
       } else {
-        var errCliMsg = rCli && rCli.error ? String(rCli.error) : 'erro conector'
-        console.log('Falha ao reenviar e-mail para clinica via conector: ' + errCliMsg)
+        console.log(
+          'Falha ao reenviar e-mail para clinica via Resend API (' +
+            resCli.statusCode +
+            '): ' +
+            resCli.raw,
+        )
       }
     } catch (errCli) {
       console.log('Falha ao reenviar e-mail para clinica: ' + errCli.message)
@@ -3394,20 +3435,39 @@ onRecordAfterUpdateSuccess((e) => {
       `
     }
 
-    // Envia paciente via conector Resend
-    if (patientEmail && patientEmail.indexOf('@') > 0) {
+    // Envia paciente direto via API REST Resend com anexo
+    var resendApiKey = $os.getenv('RESEND_API_KEY')
+    if (!resendApiKey) {
+      console.log('ATENCAO: Segredo RESEND_API_KEY nao configurado no ambiente!')
+    }
+
+    if (patientEmail && patientEmail.indexOf('@') > 0 && resendApiKey) {
       try {
-        var rPac = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-          from: senderEmail,
-          to: [patientEmail],
-          subject: subject,
-          html: getHtml(false),
-          attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
+        var resPac = $http.send({
+          url: 'https://api.resend.com/emails',
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + resendApiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: senderEmail,
+            to: [patientEmail],
+            subject: subject,
+            html: getHtml(false),
+            attachments: [
+              {
+                filename: pdfFilename,
+                content: cleanPdfBase64,
+              },
+            ],
+          }),
         })
-        if (rPac && rPac.successful) {
-          var dataPac = rPac.data || {}
+
+        if (resPac.statusCode >= 200 && resPac.statusCode < 300) {
+          var dataPac = resPac.json || {}
           console.log(
-            'Direct Resend email with attachment sent to ' +
+            'Direct Resend REST API email with attachment sent to ' +
               patientEmail +
               '. ID: ' +
               (dataPac.id || '') +
@@ -3420,28 +3480,46 @@ onRecordAfterUpdateSuccess((e) => {
               ' paginas)',
           )
         } else {
-          var errPacMsg = rPac && rPac.error ? String(rPac.error) : 'erro conector'
-          console.log('Falha ao enviar e-mail para paciente via conector: ' + errPacMsg)
+          console.log(
+            'Falha ao enviar e-mail para paciente via Resend API (' +
+              resPac.statusCode +
+              '): ' +
+              resPac.raw,
+          )
         }
       } catch (errPac) {
         console.log('Falha ao enviar e-mail para paciente: ' + errPac.message)
       }
     }
 
-    // Envia clínica via conector Resend
-    if (clinicEmail && clinicEmail.indexOf('@') > 0) {
+    // Envia clínica direto via API REST Resend com anexo
+    if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
       try {
-        var rCli = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-          from: senderEmail,
-          to: [clinicEmail],
-          subject: subject,
-          html: getHtml(true),
-          attachments: [{ filename: pdfFilename, content: cleanPdfBase64 }],
+        var resCli = $http.send({
+          url: 'https://api.resend.com/emails',
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + resendApiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: senderEmail,
+            to: [clinicEmail],
+            subject: subject,
+            html: getHtml(true),
+            attachments: [
+              {
+                filename: pdfFilename,
+                content: cleanPdfBase64,
+              },
+            ],
+          }),
         })
-        if (rCli && rCli.successful) {
-          var dataCli = rCli.data || {}
+
+        if (resCli.statusCode >= 200 && resCli.statusCode < 300) {
+          var dataCli = resCli.json || {}
           console.log(
-            'Direct Resend email with attachment sent to ' +
+            'Direct Resend REST API email with attachment sent to ' +
               clinicEmail +
               '. ID: ' +
               (dataCli.id || '') +
@@ -3454,8 +3532,12 @@ onRecordAfterUpdateSuccess((e) => {
               ' paginas)',
           )
         } else {
-          var errCliMsg = rCli && rCli.error ? String(rCli.error) : 'erro conector'
-          console.log('Falha ao enviar e-mail para clinica via conector: ' + errCliMsg)
+          console.log(
+            'Falha ao enviar e-mail para clinica via Resend API (' +
+              resCli.statusCode +
+              '): ' +
+              resCli.raw,
+          )
         }
       } catch (errCli) {
         console.log('Falha ao enviar e-mail para clinica: ' + errCli.message)
@@ -3476,62 +3558,3 @@ onRecordAfterUpdateSuccess((e) => {
     console.log('Erro no onRecordAfterUpdateSuccess form_submissions: ' + err.message)
   }
 }, 'form_submissions')
-
-/**
- * POST /backend/v1/test/trigger-e2e-submission
- * Rota para teste E2E real automatizado: cria ou atualiza uma submissão,
- * dispara a geração do PDF e envio real via Resend com comprovantes.
- */
-routerAdd('GET', '/backend/v1/test/trigger-e2e-submission', (e) => {
-  var qInfo = {}
-  try {
-    qInfo = e.requestInfo().query || {}
-  } catch (_) {}
-
-  var targetId = qInfo.id || '4ssy098jjxa1v0w'
-  var patientEmail = (qInfo.email || 'prime.impr@gmail.com').trim()
-  var patientName = (qInfo.name || 'Paciente Teste E2E Automático').trim()
-
-  var record = null
-  try {
-    record = $app.findRecordById('form_submissions', targetId)
-  } catch (_) {}
-
-  if (!record) {
-    try {
-      var recs = $app.findRecordsByFilter(
-        'form_submissions',
-        'status = "preenchida"',
-        '-created',
-        1,
-        0,
-      )
-      if (recs && recs.length > 0) record = recs[0]
-    } catch (_) {}
-  }
-
-  if (!record) {
-    return e.json(404, { success: false, message: 'Nenhuma submissao encontrada para teste.' })
-  }
-
-  try {
-    record.set('patient_email', patientEmail)
-    record.set('patient_name', patientName)
-    record.set('status', 'pendente')
-    record.set('pdf_attached_to_email', false)
-    record.set('email_delivery_status', 'nao_enviado')
-    $app.save(record)
-
-    record.set('status', 'preenchida')
-    $app.save(record)
-
-    return e.json(200, {
-      success: true,
-      message: 'Ficha atualizada para preenchida para disparar onRecordAfterUpdateSuccess.',
-      record_id: record.id,
-      patient_email: patientEmail,
-    })
-  } catch (err) {
-    return e.json(500, { success: false, message: 'Erro ao disparar teste: ' + err.message })
-  }
-})
