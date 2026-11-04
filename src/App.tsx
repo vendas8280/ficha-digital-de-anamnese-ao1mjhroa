@@ -7,6 +7,7 @@ import { AuthProvider } from '@/hooks/use-auth'
 
 import Index from './pages/Index'
 import LoginPage from './pages/LoginPage'
+import AgendaPage from './pages/AgendaPage'
 import DashboardPage from './pages/DashboardPage'
 import FormDetailPage from './pages/FormDetailPage'
 import SettingsPage from './pages/SettingsPage'
@@ -22,6 +23,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/painel" element={<DashboardPage />} />
           <Route path="/painel/ficha/:id" element={<FormDetailPage />} />
           <Route path="/configuracoes" element={<SettingsPage />} />

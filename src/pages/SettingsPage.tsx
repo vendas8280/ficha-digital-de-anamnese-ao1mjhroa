@@ -222,18 +222,26 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <Button
               asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">Agenda</Link>
+            </Button>
+            <Button
+              asChild
               variant="ghost"
               size="sm"
-              className="text-xs gap-1 text-slate-600 hover:text-rose-900"
+              className="text-xs gap-1 text-slate-600 hover:text-purple-900"
             >
               <Link to="/painel">
                 <ArrowLeft className="w-4 h-4 mr-1" />
-                Voltar ao Painel
+                Painel de Fichas
               </Link>
             </Button>
             <div>
-              <h1 className="text-base font-bold text-rose-950">Configurações da Clínica</h1>
-              <p className="text-xs text-rose-700 font-medium">
+              <h1 className="text-base font-bold text-slate-900">Configurações da Clínica</h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">
                 Remetente Oficial, Dados Legais e Notificações
               </p>
             </div>

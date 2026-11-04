@@ -84,10 +84,16 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
       return { ok: false, error: 'Lembrete 2h desativado nas configurações.' }
     }
 
-    if (appt.getString('status') === 'cancelado') {
-      rem.set('status', 'cancelado')
-      $app.save(rem)
-      return { ok: false, error: 'Agendamento cancelado.' }
+    var apptStatus = appt.getString('status')
+    if (apptStatus === 'cancelado' || apptStatus === 'realizado' || apptStatus === 'faltou') {
+      if (apptStatus === 'cancelado') {
+        rem.set('status', 'cancelado')
+        $app.save(rem)
+      }
+      return {
+        ok: false,
+        error: 'Agendamento com status "' + apptStatus + '", lembrete não enviado.',
+      }
     }
 
     var formSubId = appt.getString('form_submission')
@@ -331,7 +337,7 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
     // 1. Agendamentos ainda "aguardando ficha" cujo horário já passou
     var aguardando = $app.findRecordsByFilter(
       'procedure_appointments',
-      "reminder_state = 'aguardando ficha' && status != 'cancelado'",
+      "reminder_state = 'aguardando ficha' && status != 'cancelado' && status != 'realizado' && status != 'faltou'",
       '-created',
       0,
       0,
@@ -387,9 +393,16 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
       } catch (_) {}
       if (!appt) continue
 
-      if (appt.getString('status') === 'cancelado') {
-        rem.set('status', 'cancelado')
-        $app.save(rem)
+      var curApptStatus = appt.getString('status')
+      if (
+        curApptStatus === 'cancelado' ||
+        curApptStatus === 'realizado' ||
+        curApptStatus === 'faltou'
+      ) {
+        if (curApptStatus === 'cancelado') {
+          rem.set('status', 'cancelado')
+          $app.save(rem)
+        }
         continue
       }
 
@@ -503,10 +516,20 @@ routerAdd('POST', '/backend/v1/appointments/retry-reminder', (e) => {
       return { ok: false, error: 'Lembrete 2h desativado nas configurações.' }
     }
 
-    if (appt.getString('status') === 'cancelado') {
-      rem.set('status', 'cancelado')
-      $app.save(rem)
-      return { ok: false, error: 'Agendamento cancelado.' }
+    var apptStatusInline = appt.getString('status')
+    if (
+      apptStatusInline === 'cancelado' ||
+      apptStatusInline === 'realizado' ||
+      apptStatusInline === 'faltou'
+    ) {
+      if (apptStatusInline === 'cancelado') {
+        rem.set('status', 'cancelado')
+        $app.save(rem)
+      }
+      return {
+        ok: false,
+        error: 'Agendamento com status "' + apptStatusInline + '", lembrete não enviado.',
+      }
     }
 
     var formSubId = appt.getString('form_submission')

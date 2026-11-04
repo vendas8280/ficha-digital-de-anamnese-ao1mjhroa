@@ -68,6 +68,8 @@ import {
   Loader2,
   Send,
   Trash2,
+  Calendar,
+  CalendarCheck2,
   CalendarDays,
   MoreVertical,
   ChevronDown,
@@ -476,6 +478,31 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
             <Button
               asChild
               variant="outline"

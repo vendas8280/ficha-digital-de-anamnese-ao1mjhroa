@@ -355,6 +355,48 @@ export const appointmentsService = {
     }
   },
 
+  // Atualiza um agendamento (status, data, hora, etc.)
+  async updateAppointment(
+    id: string,
+    data: Partial<ProcedureAppointmentRecord>,
+  ): Promise<ProcedureAppointmentRecord> {
+    const record = await pb.collection('procedure_appointments').update(id, data)
+    return record as unknown as ProcedureAppointmentRecord
+  },
+
+  // Marca agendamento como realizado
+  async markAsRealizado(id: string): Promise<ProcedureAppointmentRecord> {
+    return this.updateAppointment(id, { status: 'realizado' })
+  },
+
+  // Marca agendamento como faltou
+  async markAsFaltou(id: string): Promise<ProcedureAppointmentRecord> {
+    return this.updateAppointment(id, { status: 'faltou' })
+  },
+
+  // Cancela agendamento
+  async cancelAppointment(id: string): Promise<ProcedureAppointmentRecord> {
+    return this.updateAppointment(id, { status: 'cancelado' })
+  },
+
+  // Remarca agendamento (atualiza data e horário, e se estiver cancelado/faltou volta para agendado)
+  async rescheduleAppointment(
+    id: string,
+    procedureDate: string,
+    procedureTime?: string,
+  ): Promise<ProcedureAppointmentRecord> {
+    return this.updateAppointment(id, {
+      procedure_date: procedureDate,
+      procedure_time: procedureTime || '',
+      status: 'agendado',
+    })
+  },
+
+  // Exclui agendamento (usado em testes/limpeza)
+  async deleteAppointment(id: string): Promise<boolean> {
+    return pb.collection('procedure_appointments').delete(id)
+  },
+
   // Disparo manual/reenvio de lembrete do agendamento (usado pelo botão Reenviar em falha)
   async retryReminder(appointmentId: string): Promise<{ success: boolean; message?: string }> {
     const res = await pb.send('/backend/v1/appointments/retry-reminder', {
