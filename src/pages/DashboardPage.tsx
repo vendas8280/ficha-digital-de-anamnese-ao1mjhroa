@@ -908,6 +908,7 @@ export default function DashboardPage() {
                           <ReminderStateBadge
                             appointment={itemAppointment}
                             formEmail={item.patient_email}
+                            signedAt={item.signed_at}
                             reminders={reminders}
                             onRetry={handleRetryReminder}
                             isRetrying={retryingReminderId === itemAppointment?.id}

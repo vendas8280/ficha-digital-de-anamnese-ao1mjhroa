@@ -8,27 +8,15 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
-  Mail,
   MailCheck,
   RefreshCw,
   UserX,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { AppointmentReminderRecord, ProcedureAppointmentRecord } from '@/services/forms'
-import { formatDateBR } from '@/lib/formatters'
 
 // Estado do lembrete gravado no banco (procedure_appointments.reminder_state),
 // calculado no servidor quando a ficha é assinada e mantido pelo cron de 15 min.
-//
-// Mapeamento exato de cores e rótulos especificados:
-// - "Aguardando ficha" -> cinza
-// - "Lembretes programados" -> azul ou roxo
-// - "Parcial: apenas 2h" -> âmbar
-// - "Fora do prazo" -> vermelho
-// - "Enviado" -> verde
-// - "Sem ficha, não enviado" (ou "sem ficha, lembrete não enviado") -> vermelho
-// - "Cancelado" -> cinza
-// - Sem agendamento -> "—" em cinza, sem selo
 const STATE_META: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
   'aguardando ficha': {
     label: 'Aguardando ficha',
@@ -93,44 +81,92 @@ const FALLBACK = {
   icon: <Clock className="w-3 h-3 mr-1" />,
 }
 
-function formatDateTimePretty(isoDate?: string, timeStr?: string): string {
-  if (!isoDate) return 'Não definida'
-  const dateFormatted = formatDateBR(isoDate)
-  if (timeStr && timeStr.trim()) {
-    return `${dateFormatted} às ${timeStr.trim()}`
+// Estados negativos onde nenhum lembrete é enviado / programado para envio
+const NEGATIVE_STATES = new Set([
+  'fora do prazo',
+  'sem ficha, lembrete não enviado',
+  'sem ficha, não enviado',
+  'falha no envio',
+  'falha',
+  'não enviado por atraso',
+  'cancelado',
+  'aguardando ficha',
+])
+
+/**
+ * Formata um timestamp UTC (ISO ou Date) no fuso America/Sao_Paulo (UTC-3)
+ * Retorna no formato "dd/mm/aaaa às hh:mm"
+ */
+export function formatInSaoPaulo(dateInput?: string | Date | null): string {
+  if (!dateInput) return ''
+  try {
+    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
+    if (isNaN(d.getTime())) return ''
+
+    const formatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+
+    const parts = formatter.formatToParts(d)
+    const day = parts.find((p) => p.type === 'day')?.value || ''
+    const month = parts.find((p) => p.type === 'month')?.value || ''
+    const year = parts.find((p) => p.type === 'year')?.value || ''
+    const hour = parts.find((p) => p.type === 'hour')?.value || ''
+    const minute = parts.find((p) => p.type === 'minute')?.value || ''
+
+    if (!day || !month || !year || !hour || !minute) return ''
+    return `${day}/${month}/${year} às ${hour}:${minute}`
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Formata a data e hora do procedimento a partir do procedure_date (armazenado como YYYY-MM-DD...)
+ * e procedure_time (armazenado como HH:MM no fuso local da clínica).
+ * Retorna "dd/mm/aaaa às hh:mm"
+ */
+export function formatProcedureDateTime(procedureDate?: string, procedureTime?: string): string {
+  if (!procedureDate) return ''
+  const m = String(procedureDate)
+    .substring(0, 10)
+    .match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return ''
+  const [, yyyy, mm, dd] = m
+  const dateFormatted = `${dd}/${mm}/${yyyy}`
+
+  const timeVal = (procedureTime || '').trim()
+  const tm = timeVal.match(/^(\d{1,2}):(\d{2})/)
+  if (tm) {
+    const hh = tm[1].padStart(2, '0')
+    const min = tm[2]
+    return `${dateFormatted} às ${hh}:${min}`
   }
   return dateFormatted
 }
 
-function formatReminderTime(isoString?: string): string {
-  if (!isoString) return ''
-  try {
-    const d = new Date(isoString)
-    if (isNaN(d.getTime())) return isoString
-    // Exibe formato DD/MM/AAAA às HH:MM
-    const day = String(d.getDate()).padStart(2, '0')
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const year = d.getFullYear()
-    const hours = String(d.getHours()).padStart(2, '0')
-    const minutes = String(d.getMinutes()).padStart(2, '0')
-    return `${day}/${month}/${year} às ${hours}:${minutes}`
-  } catch {
-    return isoString
-  }
-}
-
-// Calcula horários teóricos previstos caso ainda não existam registros gravados
-// em appointment_reminders (ex: antes da assinatura da ficha).
-function computeProjectedReminderTimes(
+/**
+ * Calcula a data/hora teórica prevista de um lembrete (24h ou 2h antes do procedimento).
+ * procedure_date (YYYY-MM-DD) e procedure_time (HH:MM) são a data/hora no fuso America/Sao_Paulo (UTC-3).
+ * Retorna "dd/mm/aaaa às hh:mm"
+ */
+export function computeProjectedTime(
   procedureDate?: string,
   procedureTime?: string,
-): { time24h?: string; time2h?: string } {
-  if (!procedureDate) return {}
+  hoursBefore = 24,
+): string {
+  if (!procedureDate) return ''
   const m = String(procedureDate)
     .substring(0, 10)
     .match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!m) return {}
-  let hh = 9 // default horário comercial se vazio
+  if (!m) return ''
+  let hh = 9
   let mm = 0
   if (procedureTime) {
     const tm = procedureTime.match(/^(\d{1,2}):(\d{2})/)
@@ -139,23 +175,94 @@ function computeProjectedReminderTimes(
       mm = parseInt(tm[2], 10)
     }
   }
-  const apptDate = new Date(
+
+  // Cria timestamp UTC do procedimento sabendo que no horário de Brasília UTC = local + 3h
+  const procUtc = Date.UTC(
     parseInt(m[1], 10),
     parseInt(m[2], 10) - 1,
     parseInt(m[3], 10),
-    hh,
+    hh + 3,
     mm,
     0,
+    0,
   )
-  if (isNaN(apptDate.getTime())) return {}
+  if (isNaN(procUtc)) return ''
 
-  const d24 = new Date(apptDate.getTime() - 24 * 3600 * 1000)
-  const d2 = new Date(apptDate.getTime() - 2 * 3600 * 1000)
+  const reminderUtc = new Date(procUtc - hoursBefore * 3600 * 1000)
+  return formatInSaoPaulo(reminderUtc)
+}
 
-  return {
-    time24h: formatReminderTime(d24.toISOString()),
-    time2h: formatReminderTime(d2.toISOString()),
+/**
+ * Retorna o texto exato para cada tipo de lembrete (2h ou 24h):
+ * - "enviado em [dd/mm/aaaa] às [hh:mm]" se enviado
+ * - "previsto [dd/mm/aaaa] às [hh:mm]" se existe ou programado mas não enviado
+ * - "nenhum" se não existe
+ */
+export function formatReminderLine(
+  kind: '2h' | '24h',
+  reminder: AppointmentReminderRecord | undefined,
+  normalizedState: string,
+  procedureDate?: string,
+  procedureTime?: string,
+): string {
+  const prefix = kind === '2h' ? 'Lembrete 2h:' : 'Lembrete 24h:'
+
+  // 1. Se tem registro no banco:
+  if (reminder) {
+    if (reminder.status === 'enviado' && reminder.sent_at) {
+      const formatted = formatInSaoPaulo(reminder.sent_at)
+      return `${prefix} enviado em ${formatted || formatInSaoPaulo(reminder.scheduled_for)}`
+    }
+    if (reminder.scheduled_for) {
+      const formatted = formatInSaoPaulo(reminder.scheduled_for)
+      if (formatted) {
+        return `${prefix} previsto ${formatted}`
+      }
+    }
   }
+
+  // 2. Se não tem registro no banco, verificar se há previsão conforme o estado:
+  if (kind === '24h') {
+    // 24h não existe em parcial 2h, fora do prazo, cancelado
+    if (
+      normalizedState === 'parcial: apenas 2h' ||
+      normalizedState === 'fora do prazo' ||
+      normalizedState === 'cancelado'
+    ) {
+      return `${prefix} nenhum`
+    }
+    if (normalizedState === 'lembretes programados' || normalizedState === 'aguardando ficha') {
+      const proj = computeProjectedTime(procedureDate, procedureTime, 24)
+      if (proj) return `${prefix} previsto ${proj}`
+    }
+    return `${prefix} nenhum`
+  }
+
+  if (kind === '2h') {
+    if (normalizedState === 'fora do prazo' || normalizedState === 'cancelado') {
+      return `${prefix} nenhum`
+    }
+    if (
+      normalizedState === 'lembretes programados' ||
+      normalizedState === 'parcial: apenas 2h' ||
+      normalizedState === 'aguardando ficha'
+    ) {
+      const proj = computeProjectedTime(procedureDate, procedureTime, 2)
+      if (proj) return `${prefix} previsto ${proj}`
+    }
+    return `${prefix} nenhum`
+  }
+
+  return `${prefix} nenhum`
+}
+
+export interface ReminderStateBadgeProps {
+  appointment?: ProcedureAppointmentRecord
+  formEmail?: string
+  signedAt?: string
+  reminders?: AppointmentReminderRecord[]
+  onRetry?: (appointmentId: string) => void
+  isRetrying?: boolean
 }
 
 // Coluna "Lembrete" da listagem do painel: estado real do agendamento
@@ -163,17 +270,12 @@ function computeProjectedReminderTimes(
 export function ReminderStateBadge({
   appointment,
   formEmail,
+  signedAt,
   reminders,
   onRetry,
   isRetrying,
-}: {
-  appointment?: ProcedureAppointmentRecord
-  formEmail?: string
-  reminders?: AppointmentReminderRecord[]
-  onRetry?: (appointmentId: string) => void
-  isRetrying?: boolean
-}) {
-  // 1. Sem agendamento -> traço "—" em cinza, SEM selo (nunca "Sim")
+}: ReminderStateBadgeProps) {
+  // 1. Sem agendamento -> traço "—" em cinza, SEM selo
   if (!appointment) {
     return <span className="text-slate-400 font-medium">—</span>
   }
@@ -195,43 +297,40 @@ export function ReminderStateBadge({
   const reminder24h = apptReminders.find((r) => r.kind === '24h')
   const reminder2h = apptReminders.find((r) => r.kind === '2h')
 
-  // Horários previstos dos lembretes
-  const projected = computeProjectedReminderTimes(
+  // Linhas formatadas do Tooltip:
+  // 1. "Procedimento: [dd/mm/aaaa] às [hh:mm]"
+  const procedureFormatted = formatProcedureDateTime(
     appointment.procedure_date,
     appointment.procedure_time,
   )
 
-  let display24h = reminder24h ? formatReminderTime(reminder24h.scheduled_for) : ''
-  let display2h = reminder2h ? formatReminderTime(reminder2h.scheduled_for) : ''
+  // 2. "Ficha assinada: [dd/mm/aaaa] às [hh:mm]" (só quando a ficha já foi assinada; senão omitir)
+  const signedFormatted = signedAt ? formatInSaoPaulo(signedAt) : ''
 
-  // Se o estado for 'lembretes programados' e ainda não tiver registro em banco, usa projeção
-  if (!display24h && normalizedState === 'lembretes programados' && projected.time24h) {
-    display24h = projected.time24h
-  }
-  if (
-    !display2h &&
-    (normalizedState === 'lembretes programados' || normalizedState === 'parcial: apenas 2h') &&
-    projected.time2h
-  ) {
-    display2h = projected.time2h
-  }
-  // Se ainda estiver 'aguardando ficha', projeta ambos como previsão para o hover
-  if (!display24h && normalizedState === 'aguardando ficha' && projected.time24h) {
-    display24h = `${projected.time24h} (previsto)`
-  }
-  if (!display2h && normalizedState === 'aguardando ficha' && projected.time2h) {
-    display2h = `${projected.time2h} (previsto)`
-  }
+  // 3. "Lembrete 2h:"
+  const line2h = formatReminderLine(
+    '2h',
+    reminder2h,
+    normalizedState,
+    appointment.procedure_date,
+    appointment.procedure_time,
+  )
 
-  // Se o estado for 'parcial: apenas 2h' ou 'fora do prazo', o de 24h não existe
-  if (normalizedState === 'parcial: apenas 2h' || normalizedState === 'fora do prazo') {
-    display24h = ''
-  }
-  // Se o estado for 'fora do prazo', nenhum existe
-  if (normalizedState === 'fora do prazo' || normalizedState === 'cancelado') {
-    display24h = ''
-    display2h = ''
-  }
+  // 4. "Lembrete 24h:"
+  const line24h = formatReminderLine(
+    '24h',
+    reminder24h,
+    normalizedState,
+    appointment.procedure_date,
+    appointment.procedure_time,
+  )
+
+  // 5. Linha final do Tooltip:
+  // "Enviado para: [e-mail]" OU "Nenhum lembrete enviado" nos estados negativos
+  const isNegativeState = NEGATIVE_STATES.has(normalizedState)
+  const finalLine = isNegativeState
+    ? 'Nenhum lembrete enviado'
+    : `Enviado para: ${destinationEmail || 'sem e-mail'}`
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -252,10 +351,10 @@ export function ReminderStateBadge({
               </Badge>
             )}
 
-            {appointment.procedure_date && (
+            {procedureFormatted && (
               <span className="text-[10px] text-slate-500 flex items-center gap-1">
                 <CheckCircle2 className="w-2.5 h-2.5 text-slate-400" />
-                {formatDateTimePretty(appointment.procedure_date, appointment.procedure_time)}
+                {procedureFormatted}
               </span>
             )}
 
@@ -289,53 +388,73 @@ export function ReminderStateBadge({
           </div>
 
           <div className="space-y-1 text-[11px]">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-slate-400">Procedimento:</span>
-              <span className="font-medium text-slate-200 text-right">
-                {formatDateTimePretty(appointment.procedure_date, appointment.procedure_time)}
-              </span>
-            </div>
-
-            {display24h && (
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-slate-400">Lembrete 24h:</span>
-                <span className="font-medium text-blue-300 text-right">{display24h}</span>
+            {/* Linha 1: Procedimento: [dd/mm/aaaa] às [hh:mm] */}
+            {procedureFormatted && (
+              <div className="text-slate-200">
+                <span className="text-slate-400">Procedimento: </span>
+                <span className="font-medium text-slate-200">{procedureFormatted}</span>
               </div>
             )}
 
-            {display2h && (
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-slate-400">Lembrete 2h:</span>
-                <span className="font-medium text-amber-300 text-right">{display2h}</span>
+            {/* Linha 2: Ficha assinada: [dd/mm/aaaa] às [hh:mm] (se assinada) */}
+            {signedFormatted && (
+              <div className="text-slate-200">
+                <span className="text-slate-400">Ficha assinada: </span>
+                <span className="font-medium text-slate-200">{signedFormatted}</span>
               </div>
             )}
 
-            {!display24h && !display2h && (
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-slate-400">Lembretes:</span>
-                <span className="font-medium text-slate-400 italic text-right">
-                  {normalizedState === 'fora do prazo'
-                    ? 'Nenhum (fora do prazo)'
-                    : normalizedState === 'cancelado'
-                      ? 'Cancelados'
-                      : 'Não programados'}
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-start justify-between gap-2 pt-0.5 border-t border-slate-800">
-              <span className="text-slate-400 flex items-center gap-1">
-                <Mail className="w-3 h-3 text-slate-400" /> E-mail:
-              </span>
+            {/* Linha 3: Lembrete 2h: [enviado em ... | previsto ... | nenhum] */}
+            <div className="text-slate-200">
+              <span className="text-slate-400">Lembrete 2h: </span>
               <span
-                className={`font-medium text-right break-all ${
-                  destinationEmail ? 'text-slate-200' : 'text-amber-400 italic'
+                className={`font-medium ${
+                  line2h.includes('enviado em')
+                    ? 'text-emerald-400'
+                    : line2h.includes('previsto')
+                      ? 'text-amber-300'
+                      : 'text-slate-400'
                 }`}
               >
-                {destinationEmail || 'sem e-mail'}
+                {line2h.replace(/^Lembrete 2h:\s*/, '')}
               </span>
             </div>
 
+            {/* Linha 4: Lembrete 24h: [enviado em ... | previsto ... | nenhum] */}
+            <div className="text-slate-200">
+              <span className="text-slate-400">Lembrete 24h: </span>
+              <span
+                className={`font-medium ${
+                  line24h.includes('enviado em')
+                    ? 'text-emerald-400'
+                    : line24h.includes('previsto')
+                      ? 'text-blue-300'
+                      : 'text-slate-400'
+                }`}
+              >
+                {line24h.replace(/^Lembrete 24h:\s*/, '')}
+              </span>
+            </div>
+
+            {/* Linha 5: Enviado para: [e-mail] OU Nenhum lembrete enviado */}
+            <div className="pt-0.5 border-t border-slate-800 text-slate-200">
+              {isNegativeState ? (
+                <span className="font-medium text-slate-400 italic">Nenhum lembrete enviado</span>
+              ) : (
+                <>
+                  <span className="text-slate-400">Enviado para: </span>
+                  <span
+                    className={`font-medium break-all ${
+                      destinationEmail ? 'text-slate-200' : 'text-amber-400 italic'
+                    }`}
+                  >
+                    {destinationEmail || 'sem e-mail'}
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Destaque "Conferir e-mail" mantido quando há divergência */}
             {emailMismatch && (
               <div className="pt-1 text-[10px] text-amber-300 border-t border-slate-800/80">
                 Atenção: e-mail do agendamento ({apptEmail}) difere do e-mail da ficha (
