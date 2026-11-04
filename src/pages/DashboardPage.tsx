@@ -505,50 +505,72 @@ export default function DashboardPage() {
         {/* 1. Três Cartões de Estado Único (mutuamente exclusivos) */}
         <div className="space-y-2">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Card 1: Com pendência (vermelho #C0392B) - CLICÁVEL */}
+            {/* Card 1: Aguardando a paciente (âmbar #D99A00) - Clicável por inteiro */}
             <Card
+              role="button"
+              tabIndex={0}
+              aria-pressed={categoryFilter === 'aguardando_paciente'}
               onClick={() => {
-                setCategoryFilter((prev) => (prev === 'com_pendencia' ? null : 'com_pendencia'))
+                setCategoryFilter((prev) =>
+                  prev === 'aguardando_paciente' ? null : 'aguardando_paciente',
+                )
               }}
-              className={`rounded-[12px] bg-white border cursor-pointer transition-all hover:shadow-md ${
-                categoryFilter === 'com_pendencia'
-                  ? 'border-[#C0392B] ring-2 ring-[#C0392B]/20 shadow-sm'
-                  : 'border-slate-200/80 hover:border-red-300'
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setCategoryFilter((prev) =>
+                    prev === 'aguardando_paciente' ? null : 'aguardando_paciente',
+                  )
+                }
+              }}
+              className={`rounded-[12px] bg-white border cursor-pointer select-none transition-all duration-150 hover:bg-slate-50/90 hover:shadow-md active:bg-slate-100 ${
+                categoryFilter === 'aguardando_paciente'
+                  ? 'border-[#D99A00] ring-2 ring-[#D99A00]/25 shadow-sm bg-amber-50/20'
+                  : 'border-slate-200/80 hover:border-amber-400'
               }`}
             >
               <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between space-y-0">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#C0392B]" />
-                  <CardTitle className="text-xs font-semibold text-[#C0392B] uppercase tracking-wider">
-                    Com pendência
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#D99A00]" />
+                  <CardTitle className="text-xs font-semibold text-[#D99A00] uppercase tracking-wider">
+                    Aguardando a paciente
                   </CardTitle>
                 </div>
-                <AlertTriangle className="w-4 h-4 text-[#C0392B]" />
+                <Clock className="w-4 h-4 text-[#D99A00]" />
               </CardHeader>
               <CardContent className="p-4 pt-1">
-                <div className="text-3xl font-extrabold text-[#C0392B]">
-                  {categoryCounts.pendencia}
+                <div className="text-3xl font-extrabold text-[#D99A00]">
+                  {categoryCounts.aguardando}
                 </div>
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-xs text-slate-500">Falha no comprovante ou lembrete</p>
-                  <span className="text-[11px] font-medium text-[#C0392B] underline decoration-dotted">
-                    {categoryFilter === 'com_pendencia'
-                      ? 'Filtrando (clique p/ limpar)'
-                      : 'Filtrar lista'}
-                  </span>
+                  <p className="text-xs text-slate-500">Link gerado, ficha ainda não assinada</p>
+                  {categoryFilter === 'aguardando_paciente' && (
+                    <span className="text-[11px] font-medium text-[#D99A00] underline decoration-dotted">
+                      Filtrando (clique p/ limpar)
+                    </span>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Card 2: Fichas prontas (verde #2E9E5B) */}
+            {/* Card 2: Fichas prontas (verde #2E9E5B) - Clicável por inteiro */}
             <Card
+              role="button"
+              tabIndex={0}
+              aria-pressed={categoryFilter === 'fichas_prontas'}
               onClick={() => {
                 setCategoryFilter((prev) => (prev === 'fichas_prontas' ? null : 'fichas_prontas'))
               }}
-              className={`rounded-[12px] bg-white border cursor-pointer transition-all hover:shadow-md ${
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setCategoryFilter((prev) => (prev === 'fichas_prontas' ? null : 'fichas_prontas'))
+                }
+              }}
+              className={`rounded-[12px] bg-white border cursor-pointer select-none transition-all duration-150 hover:bg-slate-50/90 hover:shadow-md active:bg-slate-100 ${
                 categoryFilter === 'fichas_prontas'
-                  ? 'border-[#2E9E5B] ring-2 ring-[#2E9E5B]/20 shadow-sm'
-                  : 'border-slate-200/80 hover:border-emerald-300'
+                  ? 'border-[#2E9E5B] ring-2 ring-[#2E9E5B]/25 shadow-sm bg-emerald-50/20'
+                  : 'border-slate-200/80 hover:border-emerald-400'
               }`}
             >
               <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between space-y-0">
@@ -575,36 +597,43 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Card 3: Aguardando a paciente (âmbar #D99A00) */}
+            {/* Card 3: Com pendência (vermelho #C0392B) - Clicável por inteiro */}
             <Card
+              role="button"
+              tabIndex={0}
+              aria-pressed={categoryFilter === 'com_pendencia'}
               onClick={() => {
-                setCategoryFilter((prev) =>
-                  prev === 'aguardando_paciente' ? null : 'aguardando_paciente',
-                )
+                setCategoryFilter((prev) => (prev === 'com_pendencia' ? null : 'com_pendencia'))
               }}
-              className={`rounded-[12px] bg-white border cursor-pointer transition-all hover:shadow-md ${
-                categoryFilter === 'aguardando_paciente'
-                  ? 'border-[#D99A00] ring-2 ring-[#D99A00]/20 shadow-sm'
-                  : 'border-slate-200/80 hover:border-amber-300'
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setCategoryFilter((prev) => (prev === 'com_pendencia' ? null : 'com_pendencia'))
+                }
+              }}
+              className={`rounded-[12px] bg-white border cursor-pointer select-none transition-all duration-150 hover:bg-slate-50/90 hover:shadow-md active:bg-slate-100 ${
+                categoryFilter === 'com_pendencia'
+                  ? 'border-[#C0392B] ring-2 ring-[#C0392B]/25 shadow-sm bg-red-50/20'
+                  : 'border-slate-200/80 hover:border-red-400'
               }`}
             >
               <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between space-y-0">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#D99A00]" />
-                  <CardTitle className="text-xs font-semibold text-[#D99A00] uppercase tracking-wider">
-                    Aguardando a paciente
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#C0392B]" />
+                  <CardTitle className="text-xs font-semibold text-[#C0392B] uppercase tracking-wider">
+                    Com pendência
                   </CardTitle>
                 </div>
-                <Clock className="w-4 h-4 text-[#D99A00]" />
+                <AlertTriangle className="w-4 h-4 text-[#C0392B]" />
               </CardHeader>
               <CardContent className="p-4 pt-1">
-                <div className="text-3xl font-extrabold text-[#D99A00]">
-                  {categoryCounts.aguardando}
+                <div className="text-3xl font-extrabold text-[#C0392B]">
+                  {categoryCounts.pendencia}
                 </div>
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-xs text-slate-500">Link gerado, ficha ainda não assinada</p>
-                  {categoryFilter === 'aguardando_paciente' && (
-                    <span className="text-[11px] font-medium text-[#D99A00] underline decoration-dotted">
+                  <p className="text-xs text-slate-500">Falha no comprovante ou lembrete</p>
+                  {categoryFilter === 'com_pendencia' && (
+                    <span className="text-[11px] font-medium text-[#C0392B] underline decoration-dotted">
                       Filtrando (clique p/ limpar)
                     </span>
                   )}
