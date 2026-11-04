@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { formsService, appointmentsService } from '@/services/forms'
-import type { FormSubmissionRecord } from '@/services/forms'
+import type { FormSubmissionRecord, ProcedureAppointmentRecord } from '@/services/forms'
+import { ReminderStateBadge } from '@/components/ReminderStateBadge'
 import type { FormType } from '@/types/form'
 import { formatDateBR } from '@/lib/formatters'
 import { Button } from '@/components/ui/button'
@@ -58,6 +59,8 @@ export default function DashboardPage() {
   const { toast } = useToast()
 
   const [forms, setForms] = useState<FormSubmissionRecord[]>([])
+  // Agendamentos (base da coluna "Lembrete", vinculados por form_submission)
+  const [appointments, setAppointments] = useState<ProcedureAppointmentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
@@ -106,6 +109,11 @@ export default function DashboardPage() {
     try {
       const data = await formsService.listForms()
       setForms(data)
+      // Agendamentos carregados em paralelo; falha aqui não impede a listagem
+      appointmentsService
+        .listAll()
+        .then(setAppointments)
+        .catch(() => setAppointments([]))
     } catch {
       toast({
         title: 'Erro ao carregar fichas',
@@ -763,6 +771,7 @@ export default function DashboardPage() {
                     <th className="py-3 px-4">PDF no E-mail</th>
                     <th className="py-3 px-4">E-mail Comprovante</th>
                     <th className="py-3 px-4">Data do Aceite</th>
+                    <th className="py-3 px-4">Lembrete</th>
                     <th className="py-3 px-4 text-right">Ações</th>
                   </tr>
                 </thead>
@@ -770,6 +779,9 @@ export default function DashboardPage() {
                   {filteredForms.map((item) => {
                     const linkUrl = `${window.location.origin}/f/${item.token}`
                     const isCopied = copiedId === item.id
+                    const itemAppointment = appointments.find(
+                      (a) => a.form_submission === item.id,
+                    )
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
@@ -868,6 +880,13 @@ export default function DashboardPage() {
                           {item.signed_at
                             ? formatDateBR(item.signed_at)
                             : formatDateBR(item.created)}
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          <ReminderStateBadge
+                            appointment={itemAppointment}
+                            formEmail={item.patient_email}
+                          />
                         </td>
 
                         <td className="py-3.5 px-4 text-right">

@@ -294,6 +294,18 @@ export const appointmentsService = {
     return record as unknown as ProcedureAppointmentRecord
   },
 
+  // Lista todos os agendamentos (painel — base da coluna Lembrete)
+  async listAll(): Promise<ProcedureAppointmentRecord[]> {
+    try {
+      const records = await pb.collection('procedure_appointments').getFullList({
+        sort: '-created',
+      })
+      return records as unknown as ProcedureAppointmentRecord[]
+    } catch {
+      return []
+    }
+  },
+
   // Lista agendamentos de uma ficha
   async listByForm(formSubmissionId: string): Promise<ProcedureAppointmentRecord[]> {
     try {
