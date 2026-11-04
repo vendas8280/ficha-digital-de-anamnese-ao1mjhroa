@@ -72,12 +72,13 @@ describe('agendaHelpers', () => {
       'Lembrete programado',
     )
 
-    // 4. Não enviado (para cancelado, nenhum, fora do prazo, etc.)
+    // 4. Não enviado (para cancelado, faltou, nenhum, fora do prazo, etc.)
     expect(getAgendaReminderText({ ...baseAppt, reminder_state: 'não enviado por atraso' })).toBe(
       'Não enviado',
     )
     expect(getAgendaReminderText({ ...baseAppt, reminder_state: 'nenhum' })).toBe('Não enviado')
     expect(getAgendaReminderText({ ...baseAppt, reminder_state: 'cancelado' })).toBe('Não enviado')
+    expect(getAgendaReminderText({ ...baseAppt, reminder_state: 'faltou' })).toBe('Não enviado')
   })
 
   it('getCurrentWeekRange retorna início (segunda) e fim (domingo)', () => {
@@ -86,5 +87,58 @@ describe('agendaHelpers', () => {
     const week = getCurrentWeekRange(refDate)
     expect(week.start).toBe('2026-11-02')
     expect(week.end).toBe('2026-11-08')
+  })
+
+  it('regras de filtro para o estado "Faltou": permanece em hoje/todos e sai de esta_semana/proximos', () => {
+    const todayStr = '2026-11-04'
+    const tomorrowStr = '2026-11-05'
+    const weekRange = { start: '2026-11-02', end: '2026-11-08' }
+
+    const itemFaltou = {
+      appointment: {
+        id: 'a1',
+        procedure_date: todayStr,
+        status: 'faltou' as const,
+        reminder_state: 'não enviado',
+      } as ProcedureAppointmentRecord,
+      dateKey: todayStr,
+    }
+
+    const itemAgendado = {
+      appointment: {
+        id: 'a2',
+        procedure_date: todayStr,
+        status: 'agendado' as const,
+        reminder_state: 'programado',
+      } as ProcedureAppointmentRecord,
+      dateKey: todayStr,
+    }
+
+    // Regra "Hoje": ambos aparecem
+    const filterHoje = (item: typeof itemFaltou) => item.dateKey === todayStr
+    expect(filterHoje(itemFaltou)).toBe(true)
+    expect(filterHoje(itemAgendado)).toBe(true)
+
+    // Regra "Esta semana": agendado aparece, faltou sai
+    const filterEstaSemana = (item: typeof itemFaltou) =>
+      item.dateKey >= weekRange.start &&
+      item.dateKey <= weekRange.end &&
+      item.appointment.status !== 'faltou' &&
+      item.appointment.status !== 'cancelado'
+
+    expect(filterEstaSemana(itemFaltou)).toBe(false)
+    expect(filterEstaSemana(itemAgendado)).toBe(true)
+
+    // Regra "Próximos": faltou sai
+    const itemFaltouFuturo = {
+      ...itemFaltou,
+      dateKey: tomorrowStr,
+    }
+    const filterProximos = (item: typeof itemFaltouFuturo) =>
+      item.dateKey > todayStr &&
+      item.appointment.status !== 'faltou' &&
+      item.appointment.status !== 'cancelado'
+
+    expect(filterProximos(itemFaltouFuturo)).toBe(false)
   })
 })

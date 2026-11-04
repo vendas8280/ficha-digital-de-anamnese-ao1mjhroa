@@ -111,18 +111,35 @@ export default function AgendaPage() {
       const { appointment, form, dateKey } = item
       const apptStatus = (appointment.status || 'agendado').toLowerCase()
 
+      // "Hoje": conta todos os de hoje (inclusive faltou; cancelados também contam na agenda do dia)
       if (dateKey === todayStr) countHoje++
-      if (dateKey >= weekRange.start && dateKey <= weekRange.end) countEstaSemana++
-      if (dateKey > todayStr) countProximos++
 
+      // "Esta semana" e "Próximos": atendimentos futuros/pendentes da semana (faltou e cancelado saem)
+      if (
+        dateKey >= weekRange.start &&
+        dateKey <= weekRange.end &&
+        apptStatus !== 'faltou' &&
+        apptStatus !== 'cancelado'
+      ) {
+        countEstaSemana++
+      }
+
+      if (dateKey > todayStr && apptStatus !== 'faltou' && apptStatus !== 'cancelado') {
+        countProximos++
+      }
+
+      // Fichas pendentes: quem ainda precisa preencher; faltou e cancelado NÃO são contados como pendência
       const isSigned = form?.status === 'preenchida'
-      if (!isSigned && apptStatus !== 'cancelado') {
+      if (!isSigned && apptStatus !== 'cancelado' && apptStatus !== 'faltou') {
         countFichasPendentes++
         if (dateKey === tomorrowStr) countAmanhaPendentes++
       }
 
+      // Lembretes com falha: se faltou ou cancelado, não infla alerta de falha
       const remState = (appointment.reminder_state || '').trim().toLowerCase()
-      if (remState.includes('falha')) countLembretesFalha++
+      if (remState.includes('falha') && apptStatus !== 'cancelado' && apptStatus !== 'faltou') {
+        countLembretesFalha++
+      }
     }
 
     return {
@@ -144,19 +161,37 @@ export default function AgendaPage() {
       const apptStatus = (appointment.status || 'agendado').toLowerCase()
 
       if (filterTomorrowOnly) {
-        return dateKey === tomorrowStr && !isSigned && apptStatus !== 'cancelado'
+        return (
+          dateKey === tomorrowStr &&
+          !isSigned &&
+          apptStatus !== 'cancelado' &&
+          apptStatus !== 'faltou'
+        )
       }
 
       if (topCardFilter === 'hoje') return dateKey === todayStr
       if (topCardFilter === 'esta_semana')
-        return dateKey >= weekRange.start && dateKey <= weekRange.end
-      if (topCardFilter === 'fichas_pendentes') return !isSigned && apptStatus !== 'cancelado'
-      if (topCardFilter === 'lembretes_falha') return remState.includes('falha')
+        return (
+          dateKey >= weekRange.start &&
+          dateKey <= weekRange.end &&
+          apptStatus !== 'faltou' &&
+          apptStatus !== 'cancelado'
+        )
+      if (topCardFilter === 'fichas_pendentes')
+        return !isSigned && apptStatus !== 'cancelado' && apptStatus !== 'faltou'
+      if (topCardFilter === 'lembretes_falha')
+        return remState.includes('falha') && apptStatus !== 'cancelado' && apptStatus !== 'faltou'
 
       if (pillFilter === 'hoje') return dateKey === todayStr
       if (pillFilter === 'esta_semana')
-        return dateKey >= weekRange.start && dateKey <= weekRange.end
-      if (pillFilter === 'proximos') return dateKey > todayStr
+        return (
+          dateKey >= weekRange.start &&
+          dateKey <= weekRange.end &&
+          apptStatus !== 'faltou' &&
+          apptStatus !== 'cancelado'
+        )
+      if (pillFilter === 'proximos')
+        return dateKey > todayStr && apptStatus !== 'faltou' && apptStatus !== 'cancelado'
       return true
     })
   }, [

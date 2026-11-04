@@ -50,6 +50,7 @@ export function AgendaItemRow({ item, onRefresh, onOpenReschedule }: AgendaItemR
   const { appointment, form, timeKey } = item
 
   const [confirmRealizadoOpen, setConfirmRealizadoOpen] = useState(false)
+  const [confirmFaltouOpen, setConfirmFaltouOpen] = useState(false)
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
@@ -82,6 +83,27 @@ export function AgendaItemRow({ item, onRefresh, onOpenReschedule }: AgendaItemR
     } finally {
       setActionLoading(false)
       setConfirmRealizadoOpen(false)
+    }
+  }
+
+  const handleConfirmFaltou = async () => {
+    setActionLoading(true)
+    try {
+      await appointmentsService.markAsFaltou(appointment.id)
+      toast({
+        title: 'Falta registrada',
+        description: `${patientName} marcado como faltou.`,
+      })
+      onRefresh()
+    } catch {
+      toast({
+        title: 'Erro ao registrar falta',
+        description: 'Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setActionLoading(false)
+      setConfirmFaltouOpen(false)
     }
   }
 
@@ -194,7 +216,7 @@ export function AgendaItemRow({ item, onRefresh, onOpenReschedule }: AgendaItemR
     }
     if (apptStatus === 'faltou') {
       return (
-        <Badge className="bg-slate-600 hover:bg-slate-600 text-white text-[10px] font-semibold tracking-wide border-0 px-2 py-0.5 rounded-full flex items-center gap-1">
+        <Badge className="bg-[#C0392B] hover:bg-[#C0392B] text-white text-[10px] font-semibold tracking-wide border-0 px-2 py-0.5 rounded-full flex items-center gap-1">
           <UserX className="w-3 h-3" />
           Faltou
         </Badge>
@@ -315,6 +337,16 @@ export function AgendaItemRow({ item, onRefresh, onOpenReschedule }: AgendaItemR
                 <span>Reenviar ficha</span>
               </DropdownMenuItem>
 
+              {apptStatus !== 'faltou' && (
+                <DropdownMenuItem
+                  onClick={() => setConfirmFaltouOpen(true)}
+                  className="flex items-center gap-2 text-[#C0392B] focus:text-[#C0392B] cursor-pointer"
+                >
+                  <UserX className="w-3.5 h-3.5 text-[#C0392B]" />
+                  <span>Marcar falta</span>
+                </DropdownMenuItem>
+              )}
+
               <DropdownMenuItem
                 onClick={() => onOpenReschedule(item)}
                 className="flex items-center gap-2 cursor-pointer"
@@ -361,6 +393,35 @@ export function AgendaItemRow({ item, onRefresh, onOpenReschedule }: AgendaItemR
               className="bg-[#2E9E5B] hover:bg-[#258249] text-white text-xs font-medium"
             >
               Sim, confirmar realizado
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal de confirmação: Marcar falta */}
+      <AlertDialog open={confirmFaltouOpen} onOpenChange={setConfirmFaltouOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <UserX className="w-4 h-4 text-[#C0392B]" />
+              Marcar que a paciente não compareceu?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              Deseja registrar falta para o atendimento de <strong>{patientName}</strong> às{' '}
+              <strong>{timeKey}</strong>? O agendamento permanecerá visível na lista com a etiqueta
+              vermelha de falta e nenhum lembrete futuro será disparado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionLoading} className="text-xs">
+              Voltar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmFaltou}
+              disabled={actionLoading}
+              className="bg-[#C0392B] hover:bg-[#a53125] text-white text-xs font-medium"
+            >
+              Confirmar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

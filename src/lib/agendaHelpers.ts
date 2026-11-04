@@ -122,7 +122,7 @@ export function getAgendaReminderText(appointment: ProcedureAppointmentRecord): 
   if (raw.includes('atraso') || raw.includes('não enviado') || raw.includes('fora do prazo')) {
     return 'Não enviado'
   }
-  if (raw.includes('cancelado')) {
+  if (raw.includes('cancelado') || raw.includes('faltou')) {
     return 'Não enviado'
   }
   return 'Não enviado'
