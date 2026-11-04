@@ -2061,6 +2061,8 @@ onRecordAfterUpdateSuccess((e) => {
     // Cria o lembrete do tipo informado se ainda não existir. O índice
     // único (appointment, kind) garante 1 lembrete por tipo por
     // agendamento; aqui a idempotência é reforçada buscando antes de criar.
+    // O scheduled_for é SEMPRE derivado da data/hora do procedimento menos
+    // as horas correspondentes (24h ou 2h), nunca do momento da assinatura.
     function lembrarEnsure(aId, kind, schedFor) {
       var existing = $app.findRecordsByFilter(
         'appointment_reminders',
@@ -2070,7 +2072,18 @@ onRecordAfterUpdateSuccess((e) => {
         0,
         { aid: aId, kind: kind },
       )
-      if (existing && existing.length > 0) return existing[0]
+      if (existing && existing.length > 0) {
+        var existingRem = existing[0]
+        // Se ainda estiver programado e o horário previsto for diferente, atualiza
+        if (existingRem.getString('status') === 'programado') {
+          var expectedIso = schedFor.toISOString()
+          if (existingRem.getString('scheduled_for') !== expectedIso) {
+            existingRem.set('scheduled_for', expectedIso)
+            $app.save(existingRem)
+          }
+        }
+        return existingRem
+      }
       var remCol = $app.findCollectionByNameOrId('appointment_reminders')
       var rem = new Record(remCol)
       rem.set('appointment', aId)
@@ -2149,13 +2162,17 @@ onRecordAfterUpdateSuccess((e) => {
             var remHoursLeft = (remApptAt.getTime() - Date.now()) / 3600000
             var remNewState = ''
 
-            // Respeita antecedência mínima configurada:
-            // Se as horas restantes até o procedimento forem menores que a antecedência mínima
-            // configurada (6, 12 ou 24h), considera fora do prazo.
-            if (remHoursLeft < sMinAdv || remHoursLeft <= 2) {
+            // Regra de programação de lembretes:
+            // Lembrete 24h = data+hora do procedimento menos 24 horas.
+            // Lembrete 2h  = data+hora do procedimento menos 2 horas.
+            // Horário previsto SEMPRE derivado da data/hora do procedimento.
+            //
+            // Se faltarem 2h ou menos até o procedimento, a janela de ambos já expirou: 'fora do prazo'.
+            // Se faltarem entre >2h e <=24h: o de 24h já expirou, programa apenas o de 2h se ativo: 'parcial: apenas 2h'.
+            // Se faltarem >24h: programa ambos conforme interruptores.
+            if (remHoursLeft <= 2) {
               remNewState = 'fora do prazo'
             } else if (remHoursLeft > 24) {
-              // Faltam mais de 24h: programa ambos conforme interruptores
               if (sEnable24) {
                 lembrarEnsure(remAppt.id, '24h', new Date(remApptAt.getTime() - 24 * 3600000))
               }
@@ -2168,7 +2185,7 @@ onRecordAfterUpdateSuccess((e) => {
                   ? 'parcial: apenas 2h'
                   : 'fora do prazo'
             } else {
-              // Entre antecedência mínima e 24h: nunca programa o de 24h atrasado
+              // Faltam entre >2h e <=24h até o procedimento: programa apenas o lembrete de 2h
               if (sEnable2) {
                 lembrarEnsure(remAppt.id, '2h', new Date(remApptAt.getTime() - 2 * 3600000))
                 remNewState = 'parcial: apenas 2h'

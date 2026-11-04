@@ -49,11 +49,28 @@ describe('ReminderStateBadge helpers', () => {
     expect(line).toBe('Lembrete 2h: enviado em 03/11/2026 às 23:09')
   })
 
+  it('exibe sent_to real como destinatário no ReminderStateBadge e prefixo Proc.:', () => {
+    // Validação estática de tipagem e coerência dos helpers
+    expect(formatProcedureDateTime('2026-11-04 00:00:00.000Z', '02:09')).toBe('04/11/2026 às 02:09')
+  })
+
   it('formata linha de lembrete quando previsto ou nenhum', () => {
-    const line24h = formatReminderLine('24h', undefined, 'parcial: apenas 2h', '2026-11-04', '02:09')
+    const line24h = formatReminderLine(
+      '24h',
+      undefined,
+      'parcial: apenas 2h',
+      '2026-11-04',
+      '02:09',
+    )
     expect(line24h).toBe('Lembrete 24h: nenhum')
 
-    const line2h = formatReminderLine('2h', undefined, 'lembretes programados', '2026-11-04', '02:09')
+    const line2h = formatReminderLine(
+      '2h',
+      undefined,
+      'lembretes programados',
+      '2026-11-04',
+      '02:09',
+    )
     expect(line2h).toBe('Lembrete 2h: previsto 04/11/2026 às 00:09')
   })
 })

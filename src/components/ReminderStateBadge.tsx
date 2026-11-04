@@ -275,16 +275,11 @@ export function ReminderStateBadge({
   onRetry,
   isRetrying,
 }: ReminderStateBadgeProps) {
-  // 1. Sem agendamento -> traço "—" em cinza, SEM selo
-  if (!appointment) {
-    return <span className="text-slate-400 font-medium">—</span>
-  }
-
-  const normalizedState = (appointment.reminder_state || '').trim().toLowerCase()
+  const normalizedState = (appointment?.reminder_state || '').trim().toLowerCase()
   const meta = STATE_META[normalizedState] || FALLBACK
 
   // E-mail que vai receber o lembrete (prioriza e-mail do agendamento ou da ficha)
-  const apptEmail = (appointment.patient_email || '').trim()
+  const apptEmail = (appointment?.patient_email || '').trim()
   const cleanFormEmail = (formEmail || '').trim()
   const destinationEmail = apptEmail || cleanFormEmail || ''
 
@@ -293,9 +288,34 @@ export function ReminderStateBadge({
     !!apptEmail && !!cleanFormEmail && apptEmail.toLowerCase() !== cleanFormEmail.toLowerCase()
 
   // Lembretes reais vinculados a este agendamento (se carregados)
-  const apptReminders = reminders ? reminders.filter((r) => r.appointment === appointment.id) : []
+  const apptReminders =
+    reminders && appointment ? reminders.filter((r) => r.appointment === appointment.id) : []
   const reminder24h = apptReminders.find((r) => r.kind === '24h')
   const reminder2h = apptReminders.find((r) => r.kind === '2h')
+
+  // Lembrete enviado com destinatário real (campo sent_to do registro)
+  const sentReminder = apptReminders.find((r) => r.status === 'enviado' && !!r.sent_to)
+  const actualSentTo = sentReminder?.sent_to?.trim() || ''
+
+  // Horário de envio formatado para o rótulo da coluna (ex.: "Lembrete 2h enviado em 04/11 às 00:09")
+  const sentSummaryLabel = React.useMemo(() => {
+    if (normalizedState !== 'enviado' && !sentReminder) return null
+    const target = sentReminder || reminder2h || reminder24h
+    if (!target || target.status !== 'enviado') return null
+    const kindLabel = target.kind === '24h' ? 'Lembrete 24h' : 'Lembrete 2h'
+    const ts = target.sent_at || target.scheduled_for
+    if (!ts) return `${kindLabel} enviado`
+    const formatted = formatInSaoPaulo(ts)
+    if (!formatted) return `${kindLabel} enviado`
+    // "04/11/2026 às 00:09" -> extrai "04/11 às 00:09" ou usa formatted
+    const shortDate = formatted.replace(/\/20\d\d/, '')
+    return `${kindLabel} enviado em ${shortDate}`
+  }, [normalizedState, sentReminder, reminder2h, reminder24h])
+
+  // 1. Sem agendamento -> traço "—" em cinza, SEM selo (após todos os hooks)
+  if (!appointment) {
+    return <span className="text-slate-400 font-medium">—</span>
+  }
 
   // Linhas formatadas do Tooltip:
   // 1. "Procedimento: [dd/mm/aaaa] às [hh:mm]"
@@ -326,11 +346,10 @@ export function ReminderStateBadge({
   )
 
   // 5. Linha final do Tooltip:
-  // "Enviado para: [e-mail]" OU "Nenhum lembrete enviado" nos estados negativos
+  // "Enviado para: [e-mail]" mostrando SEMPRE o endereço que realmente recebeu a mensagem (sent_to),
+  // OU "Nenhum lembrete enviado" nos estados negativos.
   const isNegativeState = NEGATIVE_STATES.has(normalizedState)
-  const finalLine = isNegativeState
-    ? 'Nenhum lembrete enviado'
-    : `Enviado para: ${destinationEmail || 'sem e-mail'}`
+  const emailToShow = actualSentTo || destinationEmail || ''
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -354,7 +373,14 @@ export function ReminderStateBadge({
             {procedureFormatted && (
               <span className="text-[10px] text-slate-500 flex items-center gap-1">
                 <CheckCircle2 className="w-2.5 h-2.5 text-slate-400" />
-                {procedureFormatted}
+                Proc.: {procedureFormatted}
+              </span>
+            )}
+
+            {sentSummaryLabel && (
+              <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                <MailCheck className="w-2.5 h-2.5 text-emerald-600" />
+                {sentSummaryLabel}
               </span>
             )}
 
@@ -445,10 +471,10 @@ export function ReminderStateBadge({
                   <span className="text-slate-400">Enviado para: </span>
                   <span
                     className={`font-medium break-all ${
-                      destinationEmail ? 'text-slate-200' : 'text-amber-400 italic'
+                      emailToShow ? 'text-slate-200' : 'text-amber-400 italic'
                     }`}
                   >
-                    {destinationEmail || 'sem e-mail'}
+                    {emailToShow || 'sem e-mail'}
                   </span>
                 </>
               )}
