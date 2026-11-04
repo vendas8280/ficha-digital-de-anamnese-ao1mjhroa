@@ -34,6 +34,16 @@ export interface FormSubmissionRecord {
   updated: string
 }
 
+export interface AppointmentReminderRecord {
+  id: string
+  appointment: string
+  kind: '24h' | '2h'
+  scheduled_for: string
+  status: 'programado' | 'enviado' | 'cancelado'
+  created: string
+  updated: string
+}
+
 export interface ProcedureAppointmentRecord {
   id: string
   form_submission: string
@@ -314,6 +324,18 @@ export const appointmentsService = {
         sort: '-created',
       })
       return records as unknown as ProcedureAppointmentRecord[]
+    } catch {
+      return []
+    }
+  },
+
+  // Lista todos os lembretes programados/enviados (painel para detalhes/tooltips)
+  async listAllReminders(): Promise<AppointmentReminderRecord[]> {
+    try {
+      const records = await pb.collection('appointment_reminders').getFullList({
+        sort: 'scheduled_for',
+      })
+      return records as unknown as AppointmentReminderRecord[]
     } catch {
       return []
     }

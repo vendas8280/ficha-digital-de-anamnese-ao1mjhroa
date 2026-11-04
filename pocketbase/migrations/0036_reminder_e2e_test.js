@@ -97,7 +97,10 @@ migrate(
         0,
         0,
       )
-      const kinds = rems.map((r) => r.getString('kind')).sort().join(',')
+      const kinds = rems
+        .map((r) => r.getString('kind'))
+        .sort()
+        .join(',')
       const ok =
         rems.length === expectedReminders && appt.getString('reminder_state') === expectedState
       console.log(
@@ -145,11 +148,7 @@ migrate(
       signForm(recA)
       // Segunda conclusão (mesma ficha assinada duas vezes): NÃO deve duplicar lembretes
       signForm(recA)
-      verifyScenario(
-        { label: '30h', formId: recA.id },
-        2,
-        'lembretes programados',
-      )
+      verifyScenario({ label: '30h', formId: recA.id }, 2, 'lembretes programados')
 
       // ---- Cenário (b): procedimento daqui a ~5 horas ----
       const recB = createTestForm('5H', 'paciente5h@teste-exemplo.com')
@@ -160,7 +159,9 @@ migrate(
       signForm(recB)
       verifyScenario({ label: '5h', formId: recB.id }, 1, 'parcial: apenas 2h')
 
-      console.log('[TESTE-LEMBRETE] tokens de teste: TESTELEMB30H' + SUFFIX + ' / TESTELEMB5H' + SUFFIX)
+      console.log(
+        '[TESTE-LEMBRETE] tokens de teste: TESTELEMB30H' + SUFFIX + ' / TESTELEMB5H' + SUFFIX,
+      )
     } catch (err) {
       console.log('[TESTE-LEMBRETE] Erro no teste e2e: ' + err.message)
     }

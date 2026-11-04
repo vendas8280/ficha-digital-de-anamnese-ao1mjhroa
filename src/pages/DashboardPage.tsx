@@ -2,7 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { formsService, appointmentsService } from '@/services/forms'
-import type { FormSubmissionRecord, ProcedureAppointmentRecord } from '@/services/forms'
+import type {
+  FormSubmissionRecord,
+  ProcedureAppointmentRecord,
+  AppointmentReminderRecord,
+} from '@/services/forms'
 import { ReminderStateBadge } from '@/components/ReminderStateBadge'
 import type { FormType } from '@/types/form'
 import { formatDateBR } from '@/lib/formatters'
@@ -61,6 +65,8 @@ export default function DashboardPage() {
   const [forms, setForms] = useState<FormSubmissionRecord[]>([])
   // Agendamentos (base da coluna "Lembrete", vinculados por form_submission)
   const [appointments, setAppointments] = useState<ProcedureAppointmentRecord[]>([])
+  // Lembretes programados/enviados (para detalhes no hover da coluna "Lembrete")
+  const [reminders, setReminders] = useState<AppointmentReminderRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
@@ -109,11 +115,15 @@ export default function DashboardPage() {
     try {
       const data = await formsService.listForms()
       setForms(data)
-      // Agendamentos carregados em paralelo; falha aqui não impede a listagem
+      // Agendamentos e lembretes carregados em paralelo; falha aqui não impede a listagem
       appointmentsService
         .listAll()
         .then(setAppointments)
         .catch(() => setAppointments([]))
+      appointmentsService
+        .listAllReminders()
+        .then(setReminders)
+        .catch(() => setReminders([]))
     } catch {
       toast({
         title: 'Erro ao carregar fichas',
@@ -779,9 +789,7 @@ export default function DashboardPage() {
                   {filteredForms.map((item) => {
                     const linkUrl = `${window.location.origin}/f/${item.token}`
                     const isCopied = copiedId === item.id
-                    const itemAppointment = appointments.find(
-                      (a) => a.form_submission === item.id,
-                    )
+                    const itemAppointment = appointments.find((a) => a.form_submission === item.id)
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
@@ -886,6 +894,7 @@ export default function DashboardPage() {
                           <ReminderStateBadge
                             appointment={itemAppointment}
                             formEmail={item.patient_email}
+                            reminders={reminders}
                           />
                         </td>
 
