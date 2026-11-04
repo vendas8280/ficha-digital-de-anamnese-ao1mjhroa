@@ -81,6 +81,10 @@ export interface ClinicSettingsRecord {
   reminder_enable_24h?: boolean
   reminder_enable_2h?: boolean
   reminder_test_mode?: boolean
+  reminder_subject_24h?: string
+  reminder_body_24h?: string
+  reminder_subject_2h?: string
+  reminder_body_2h?: string
   created: string
   updated: string
 }
@@ -389,6 +393,10 @@ export const clinicSettingsService = {
     reminder_enable_24h?: boolean
     reminder_enable_2h?: boolean
     reminder_test_mode?: boolean
+    reminder_subject_24h?: string
+    reminder_body_24h?: string
+    reminder_subject_2h?: string
+    reminder_body_2h?: string
   }): Promise<ClinicSettingsRecord> {
     const existing = await this.getSettings()
     if (existing) {
@@ -398,5 +406,18 @@ export const clinicSettingsService = {
       const created = await pb.collection('clinic_settings').create(data)
       return created as unknown as ClinicSettingsRecord
     }
+  },
+
+  // Disparo de teste de modelo de lembrete (Etapa 5)
+  async testReminderTemplate(params: {
+    kind: '24h' | '2h'
+    subject?: string
+    body?: string
+  }): Promise<{ success: boolean; recipient: string; subject: string; message: string }> {
+    const res = await pb.send('/backend/v1/appointments/test-reminder-template', {
+      method: 'POST',
+      body: params,
+    })
+    return res as { success: boolean; recipient: string; subject: string; message: string }
   },
 }

@@ -169,76 +169,101 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
       dateStrBR = String(apptDateVal || '')
     }
 
-    var subject = ''
-    if (kind === '24h') {
-      subject = 'Lembrete: seu procedimento é amanhã às ' + apptTimeStr
-    } else {
-      subject = 'Lembrete: seu procedimento é hoje às ' + apptTimeStr
+    var defaultSubject24h = 'Lembrete: seu procedimento é amanhã às {{hora}}'
+    var defaultSubject2h = 'Lembrete: seu procedimento é hoje às {{hora}}'
+    var defaultBody =
+      'Lembrete de Agendamento\n\n' +
+      'Olá, {{nome}}!\n\n' +
+      'Este é um lembrete do seu procedimento em {{data_extenso}} às {{hora}}, na {{nome_clinica}}.\n\n' +
+      'Procedimento: {{procedimento}}\n' +
+      'Data: {{data_extenso}}\n' +
+      'Horário: {{hora}}\n' +
+      'Local: {{endereco}}\n\n' +
+      'Em caso de dúvida, fale com a clínica: {{telefone}}\n\n' +
+      '{{nome_clinica}}'
+
+    var tplSubject = ''
+    var tplBody = ''
+    if (settingsRec) {
+      if (kind === '24h') {
+        tplSubject = settingsRec.getString('reminder_subject_24h')
+        tplBody = settingsRec.getString('reminder_body_24h')
+      } else {
+        tplSubject = settingsRec.getString('reminder_subject_2h')
+        tplBody = settingsRec.getString('reminder_body_2h')
+      }
     }
-    if (testMode) {
-      subject = '[TESTE] ' + subject
+    if (!tplSubject || !tplSubject.trim()) {
+      tplSubject = kind === '24h' ? defaultSubject24h : defaultSubject2h
+    }
+    if (!tplBody || !tplBody.trim()) {
+      tplBody = defaultBody
     }
 
-    var bodyText =
-      'Olá, ' +
-      patientName +
-      '.\n\n' +
-      'Este é um lembrete do seu procedimento na ' +
-      clinicName +
-      '.\n\n' +
-      'Procedimento: ' +
-      procedureName +
-      '.\n' +
-      'Data: ' +
-      dateStrBR +
-      '.\n' +
-      'Horário: ' +
-      apptTimeStr +
-      '.\n' +
-      'Endereço: ' +
-      clinicAddr +
-      '.\n' +
-      'Telefone: ' +
-      clinicPhone +
-      '.\n\n' +
-      'Em caso de dúvida, fale com a clínica pelo telefone acima.'
+    function renderTemplate(text) {
+      if (!text) return ''
+      return String(text)
+        .split('{{nome}}')
+        .join(patientName)
+        .split('{{procedimento}}')
+        .join(procedureName)
+        .split('{{data_extenso}}')
+        .join(dateStrBR)
+        .split('{{hora}}')
+        .join(apptTimeStr)
+        .split('{{endereco}}')
+        .join(clinicAddr)
+        .split('{{telefone}}')
+        .join(clinicPhone)
+        .split('{{nome_clinica}}')
+        .join(clinicName)
+    }
+
+    function escapeHtml(str) {
+      if (!str) return ''
+      return String(str)
+        .split('&')
+        .join('&amp;')
+        .split('<')
+        .join('&lt;')
+        .split('>')
+        .join('&gt;')
+        .split('"')
+        .join('&quot;')
+        .split("'")
+        .join('&#39;')
+    }
+
+    var renderedSubject = renderTemplate(tplSubject)
+    var subject = testMode ? '[TESTE] ' + renderedSubject : renderedSubject
+    var bodyText = renderTemplate(tplBody)
+
+    var bodyHtmlEscaped = escapeHtml(bodyText)
+      .split('\n\n')
+      .map(function (p) {
+        return (
+          '<p style="margin: 0 0 14px 0; font-size: 14px; line-height: 1.6;">' +
+          p.replace(/\n/g, '<br/>') +
+          '</p>'
+        )
+      })
+      .join('')
 
     var bodyHtml =
       '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; line-height: 1.6; color: #1e293b; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">' +
       '<div style="border-bottom: 2px solid #881337; padding-bottom: 12px; margin-bottom: 20px;">' +
       '<h2 style="margin: 0; color: #881337; font-size: 20px; font-weight: 700;">' +
-      clinicName +
+      escapeHtml(clinicName) +
       '</h2>' +
       (testMode
         ? '<div style="display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-top: 6px;">MODO DE TESTE ATIVO — Destino original da paciente: ' +
-          realPatientEmail +
+          escapeHtml(realPatientEmail) +
           '</div>'
         : '') +
       '</div>' +
-      '<p style="font-size: 15px; margin: 0 0 16px 0;">Olá, <strong>' +
-      patientName +
-      '</strong>.</p>' +
-      '<p style="font-size: 14px; margin: 0 0 16px 0;">Este é um lembrete do seu procedimento na <strong>' +
-      clinicName +
-      '</strong>.</p>' +
-      '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 20px 0; font-size: 14px;">' +
-      '<div style="margin-bottom: 8px;"><strong>Procedimento:</strong> ' +
-      procedureName +
+      '<div style="color: #334155;">' +
+      bodyHtmlEscaped +
       '</div>' +
-      '<div style="margin-bottom: 8px;"><strong>Data:</strong> ' +
-      dateStrBR +
-      '</div>' +
-      '<div style="margin-bottom: 8px;"><strong>Horário:</strong> ' +
-      apptTimeStr +
-      '</div>' +
-      '<div style="margin-bottom: 8px;"><strong>Endereço:</strong> ' +
-      clinicAddr +
-      '</div>' +
-      '<div><strong>Telefone:</strong> ' +
-      clinicPhone +
-      '</div>' +
-      '</div>' +
-      '<p style="font-size: 13px; color: #64748b; margin: 0;">Em caso de dúvida, fale com a clínica pelo telefone acima.</p>' +
       '</div>'
 
     var currentAttempts = (rem.getInt('attempts') || 0) + 1
@@ -579,76 +604,101 @@ routerAdd('POST', '/backend/v1/appointments/retry-reminder', (e) => {
       dateStrBR = String(apptDateVal || '')
     }
 
-    var subject = ''
-    if (kind === '24h') {
-      subject = 'Lembrete: seu procedimento é amanhã às ' + apptTimeStr
-    } else {
-      subject = 'Lembrete: seu procedimento é hoje às ' + apptTimeStr
+    var defaultSubject24h = 'Lembrete: seu procedimento é amanhã às {{hora}}'
+    var defaultSubject2h = 'Lembrete: seu procedimento é hoje às {{hora}}'
+    var defaultBody =
+      'Lembrete de Agendamento\n\n' +
+      'Olá, {{nome}}!\n\n' +
+      'Este é um lembrete do seu procedimento em {{data_extenso}} às {{hora}}, na {{nome_clinica}}.\n\n' +
+      'Procedimento: {{procedimento}}\n' +
+      'Data: {{data_extenso}}\n' +
+      'Horário: {{hora}}\n' +
+      'Local: {{endereco}}\n\n' +
+      'Em caso de dúvida, fale com a clínica: {{telefone}}\n\n' +
+      '{{nome_clinica}}'
+
+    var tplSubject = ''
+    var tplBody = ''
+    if (settingsRec) {
+      if (kind === '24h') {
+        tplSubject = settingsRec.getString('reminder_subject_24h')
+        tplBody = settingsRec.getString('reminder_body_24h')
+      } else {
+        tplSubject = settingsRec.getString('reminder_subject_2h')
+        tplBody = settingsRec.getString('reminder_body_2h')
+      }
     }
-    if (testMode) {
-      subject = '[TESTE] ' + subject
+    if (!tplSubject || !tplSubject.trim()) {
+      tplSubject = kind === '24h' ? defaultSubject24h : defaultSubject2h
+    }
+    if (!tplBody || !tplBody.trim()) {
+      tplBody = defaultBody
     }
 
-    var bodyText =
-      'Olá, ' +
-      patientName +
-      '.\n\n' +
-      'Este é um lembrete do seu procedimento na ' +
-      clinicName +
-      '.\n\n' +
-      'Procedimento: ' +
-      procedureName +
-      '.\n' +
-      'Data: ' +
-      dateStrBR +
-      '.\n' +
-      'Horário: ' +
-      apptTimeStr +
-      '.\n' +
-      'Endereço: ' +
-      clinicAddr +
-      '.\n' +
-      'Telefone: ' +
-      clinicPhone +
-      '.\n\n' +
-      'Em caso de dúvida, fale com a clínica pelo telefone acima.'
+    function renderTemplate(text) {
+      if (!text) return ''
+      return String(text)
+        .split('{{nome}}')
+        .join(patientName)
+        .split('{{procedimento}}')
+        .join(procedureName)
+        .split('{{data_extenso}}')
+        .join(dateStrBR)
+        .split('{{hora}}')
+        .join(apptTimeStr)
+        .split('{{endereco}}')
+        .join(clinicAddr)
+        .split('{{telefone}}')
+        .join(clinicPhone)
+        .split('{{nome_clinica}}')
+        .join(clinicName)
+    }
+
+    function escapeHtml(str) {
+      if (!str) return ''
+      return String(str)
+        .split('&')
+        .join('&amp;')
+        .split('<')
+        .join('&lt;')
+        .split('>')
+        .join('&gt;')
+        .split('"')
+        .join('&quot;')
+        .split("'")
+        .join('&#39;')
+    }
+
+    var renderedSubject = renderTemplate(tplSubject)
+    var subject = testMode ? '[TESTE] ' + renderedSubject : renderedSubject
+    var bodyText = renderTemplate(tplBody)
+
+    var bodyHtmlEscaped = escapeHtml(bodyText)
+      .split('\n\n')
+      .map(function (p) {
+        return (
+          '<p style="margin: 0 0 14px 0; font-size: 14px; line-height: 1.6;">' +
+          p.replace(/\n/g, '<br/>') +
+          '</p>'
+        )
+      })
+      .join('')
 
     var bodyHtml =
       '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; line-height: 1.6; color: #1e293b; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">' +
       '<div style="border-bottom: 2px solid #881337; padding-bottom: 12px; margin-bottom: 20px;">' +
       '<h2 style="margin: 0; color: #881337; font-size: 20px; font-weight: 700;">' +
-      clinicName +
+      escapeHtml(clinicName) +
       '</h2>' +
       (testMode
         ? '<div style="display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-top: 6px;">MODO DE TESTE ATIVO — Destino original da paciente: ' +
-          realPatientEmail +
+          escapeHtml(realPatientEmail) +
           '</div>'
         : '') +
       '</div>' +
-      '<p style="font-size: 15px; margin: 0 0 16px 0;">Olá, <strong>' +
-      patientName +
-      '</strong>.</p>' +
-      '<p style="font-size: 14px; margin: 0 0 16px 0;">Este é um lembrete do seu procedimento na <strong>' +
-      clinicName +
-      '</strong>.</p>' +
-      '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 20px 0; font-size: 14px;">' +
-      '<div style="margin-bottom: 8px;"><strong>Procedimento:</strong> ' +
-      procedureName +
+      '<div style="color: #334155;">' +
+      bodyHtmlEscaped +
       '</div>' +
-      '<div style="margin-bottom: 8px;"><strong>Data:</strong> ' +
-      dateStrBR +
-      '</div>' +
-      '<div style="margin-bottom: 8px;"><strong>Horário:</strong> ' +
-      apptTimeStr +
-      '</div>' +
-      '<div style="margin-bottom: 8px;"><strong>Endereço:</strong> ' +
-      clinicAddr +
-      '</div>' +
-      '<div><strong>Telefone:</strong> ' +
-      clinicPhone +
-      '</div>' +
-      '</div>' +
-      '<p style="font-size: 13px; color: #64748b; margin: 0;">Em caso de dúvida, fale com a clínica pelo telefone acima.</p>' +
       '</div>'
 
     var currentAttempts = (rem.getInt('attempts') || 0) + 1
@@ -778,5 +828,247 @@ routerAdd('POST', '/backend/v1/appointments/retry-reminder', (e) => {
     }
   } catch (err) {
     return e.json(500, { error: 'Erro ao processar reenvio de lembrete: ' + err.message })
+  }
+})
+
+// -------------------------------------------------------------
+// Rota de teste manual de modelo de lembrete (Etapa 5)
+// POST /backend/v1/appointments/test-reminder-template
+// Dispara o modelo (24h ou 2h) para o e-mail de comprovantes da clínica,
+// com [TESTE] no assunto, independente do interruptor de modo de teste.
+// -------------------------------------------------------------
+routerAdd('POST', '/backend/v1/appointments/test-reminder-template', (e) => {
+  try {
+    var reqInfo = e.requestInfo()
+    var auth = reqInfo.auth
+    if (!auth) {
+      return e.json(401, { error: 'Não autorizado. Faça login.' })
+    }
+
+    var resendKey = $os.getenv('RESEND_API_KEY')
+    if (!resendKey) {
+      return e.json(500, { error: 'Chave RESEND_API_KEY ausente no cofre do Skip Cloud.' })
+    }
+
+    var data = {}
+    try {
+      data = reqInfo.body || {}
+    } catch (_) {}
+
+    var kind = (data.kind || '24h').toLowerCase() === '2h' ? '2h' : '24h'
+
+    var settingsRec = null
+    try {
+      var recs = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
+      if (recs && recs.length > 0) settingsRec = recs[0]
+    } catch (_) {}
+
+    var clinicName = 'Andresa Souza Clinic'
+    var clinicAddr = 'Jardins, Aracaju - SE'
+    var clinicPhone = '(79) 99809-1314'
+    var clinicEmail = 'gihobaicn@hotmail.com'
+    var reminderSender = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
+
+    if (settingsRec) {
+      if (settingsRec.getString('clinic_name')) clinicName = settingsRec.getString('clinic_name')
+      if (settingsRec.getString('clinic_address'))
+        clinicAddr = settingsRec.getString('clinic_address')
+      if (settingsRec.getString('phone')) clinicPhone = settingsRec.getString('phone')
+      if (settingsRec.getString('notification_email'))
+        clinicEmail = settingsRec.getString('notification_email')
+      if (settingsRec.getString('reminder_sender_email')) {
+        reminderSender = settingsRec.getString('reminder_sender_email')
+      } else if (settingsRec.getString('sender_email')) {
+        reminderSender = settingsRec.getString('sender_email')
+      }
+    }
+
+    var defaultSubject24h = 'Lembrete: seu procedimento é amanhã às {{hora}}'
+    var defaultSubject2h = 'Lembrete: seu procedimento é hoje às {{hora}}'
+    var defaultBody =
+      'Lembrete de Agendamento\n\n' +
+      'Olá, {{nome}}!\n\n' +
+      'Este é um lembrete do seu procedimento em {{data_extenso}} às {{hora}}, na {{nome_clinica}}.\n\n' +
+      'Procedimento: {{procedimento}}\n' +
+      'Data: {{data_extenso}}\n' +
+      'Horário: {{hora}}\n' +
+      'Local: {{endereco}}\n\n' +
+      'Em caso de dúvida, fale com a clínica: {{telefone}}\n\n' +
+      '{{nome_clinica}}'
+
+    // Permite que o front passe subject/body atual do editor ou lê do banco
+    var tplSubject =
+      data.subject !== undefined && data.subject !== null
+        ? String(data.subject).trim()
+        : settingsRec
+          ? settingsRec.getString(kind === '24h' ? 'reminder_subject_24h' : 'reminder_subject_2h')
+          : ''
+
+    var tplBody =
+      data.body !== undefined && data.body !== null
+        ? String(data.body).trim()
+        : settingsRec
+          ? settingsRec.getString(kind === '24h' ? 'reminder_body_24h' : 'reminder_body_2h')
+          : ''
+
+    if (!tplSubject) {
+      tplSubject = kind === '24h' ? defaultSubject24h : defaultSubject2h
+    }
+    if (!tplBody) {
+      tplBody = defaultBody
+    }
+
+    // Dados de exemplo para o envio de teste
+    var patientName = 'Maria Clara Oliveira'
+    var procedureName = 'Lábios / Micropigmentação'
+    var apptTimeStr = '14:30'
+
+    // Próxima terça-feira ou data amigável formatada em pt-BR
+    var dayNames = [
+      'domingo',
+      'segunda-feira',
+      'terça-feira',
+      'quarta-feira',
+      'quinta-feira',
+      'sexta-feira',
+      'sábado',
+    ]
+    var monthNames = [
+      'janeiro',
+      'fevereiro',
+      'março',
+      'abril',
+      'maio',
+      'junho',
+      'julho',
+      'agosto',
+      'setembro',
+      'outubro',
+      'novembro',
+      'dezembro',
+    ]
+    var nowUtc = new Date()
+    // fuso SP é UTC-3
+    var spNow = new Date(nowUtc.getTime() - 3 * 3600 * 1000)
+    if (kind === '24h') {
+      spNow = new Date(spNow.getTime() + 24 * 3600 * 1000)
+    }
+    var dayOfWeek = dayNames[spNow.getUTCDay()]
+    var ddNum = spNow.getUTCDate()
+    var dayFormatted = ddNum < 10 ? '0' + ddNum : '' + ddNum
+    var monthFormatted = monthNames[spNow.getUTCMonth()]
+    var yyyy = spNow.getUTCFullYear()
+    var dateStrBR = dayOfWeek + ', ' + dayFormatted + ' de ' + monthFormatted + ' de ' + yyyy
+
+    function renderTemplate(text) {
+      if (!text) return ''
+      return String(text)
+        .split('{{nome}}')
+        .join(patientName)
+        .split('{{procedimento}}')
+        .join(procedureName)
+        .split('{{data_extenso}}')
+        .join(dateStrBR)
+        .split('{{hora}}')
+        .join(apptTimeStr)
+        .split('{{endereco}}')
+        .join(clinicAddr)
+        .split('{{telefone}}')
+        .join(clinicPhone)
+        .split('{{nome_clinica}}')
+        .join(clinicName)
+    }
+
+    function escapeHtml(str) {
+      if (!str) return ''
+      return String(str)
+        .split('&')
+        .join('&amp;')
+        .split('<')
+        .join('&lt;')
+        .split('>')
+        .join('&gt;')
+        .split('"')
+        .join('&quot;')
+        .split("'")
+        .join('&#39;')
+    }
+
+    var renderedSubject = renderTemplate(tplSubject)
+    // Conforme especificação: com "[TESTE]" no assunto, independente do modo de teste
+    var finalSubject = '[TESTE] ' + renderedSubject.replace(/^\[TESTE\]\s*/i, '')
+    var bodyText = renderTemplate(tplBody)
+
+    var bodyHtmlEscaped = escapeHtml(bodyText)
+      .split('\n\n')
+      .map(function (p) {
+        return (
+          '<p style="margin: 0 0 14px 0; font-size: 14px; line-height: 1.6;">' +
+          p.replace(/\n/g, '<br/>') +
+          '</p>'
+        )
+      })
+      .join('')
+
+    var bodyHtml =
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; line-height: 1.6; color: #1e293b; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">' +
+      '<div style="border-bottom: 2px solid #881337; padding-bottom: 12px; margin-bottom: 20px;">' +
+      '<h2 style="margin: 0; color: #881337; font-size: 20px; font-weight: 700;">' +
+      escapeHtml(clinicName) +
+      '</h2>' +
+      '<div style="display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-top: 6px;">DISPARO DE TESTE DO MODELO (' +
+      kind +
+      ') — Destinatário: ' +
+      escapeHtml(clinicEmail) +
+      '</div>' +
+      '</div>' +
+      '<div style="color: #334155;">' +
+      bodyHtmlEscaped +
+      '</div>' +
+      '</div>'
+
+    var res = $http.send({
+      url: 'https://api.resend.com/emails',
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + resendKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: reminderSender,
+        to: [clinicEmail],
+        subject: finalSubject,
+        text: bodyText,
+        html: bodyHtml,
+      }),
+      timeout: 30,
+    })
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      console.log(
+        'Teste de modelo ' +
+          kind +
+          ' enviado com sucesso para ' +
+          clinicEmail +
+          ' | Assunto: ' +
+          finalSubject,
+      )
+      return e.json(200, {
+        success: true,
+        recipient: clinicEmail,
+        subject: finalSubject,
+        message: 'E-mail de teste enviado para ' + clinicEmail + '!',
+      })
+    } else {
+      var errBody = ''
+      try {
+        errBody = res.rawText || JSON.stringify(res.json)
+      } catch (_) {}
+      var errMsg = 'Resend HTTP ' + res.statusCode + ': ' + errBody
+      console.log('Falha no envio de teste de modelo ' + kind + ': ' + errMsg)
+      return e.json(500, { success: false, error: errMsg })
+    }
+  } catch (err) {
+    return e.json(500, { error: 'Erro ao disparar teste de modelo: ' + err.message })
   }
 })

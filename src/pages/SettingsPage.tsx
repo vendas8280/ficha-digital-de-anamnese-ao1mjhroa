@@ -29,7 +29,15 @@ import {
   Bell,
   Clock,
   FlaskConical,
+  FileText,
 } from 'lucide-react'
+import { ReminderTemplateEditor } from '@/components/ReminderTemplateEditor'
+import {
+  DEFAULT_REMINDER_SUBJECT_24H,
+  DEFAULT_REMINDER_SUBJECT_2H,
+  DEFAULT_REMINDER_BODY,
+  validateReminderTemplate,
+} from '@/lib/reminderTemplates'
 
 export default function SettingsPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
@@ -57,6 +65,14 @@ export default function SettingsPage() {
   const [reminderEnable24h, setReminderEnable24h] = useState(true)
   const [reminderEnable2h, setReminderEnable2h] = useState(true)
   const [reminderTestMode, setReminderTestMode] = useState(true)
+
+  // Textos dos e-mails de lembrete (Etapa 5)
+  const [reminderSubject24h, setReminderSubject24h] = useState(DEFAULT_REMINDER_SUBJECT_24H)
+  const [reminderBody24h, setReminderBody24h] = useState(DEFAULT_REMINDER_BODY)
+  const [reminderSubject2h, setReminderSubject2h] = useState(DEFAULT_REMINDER_SUBJECT_2H)
+  const [reminderBody2h, setReminderBody2h] = useState(DEFAULT_REMINDER_BODY)
+  const [sendingTest24h, setSendingTest24h] = useState(false)
+  const [sendingTest2h, setSendingTest2h] = useState(false)
 
   // Check auth
   useEffect(() => {
@@ -101,6 +117,20 @@ export default function SettingsPage() {
           if (typeof data.reminder_test_mode === 'boolean') {
             setReminderTestMode(data.reminder_test_mode)
           }
+
+          // Textos dos lembretes
+          if (data.reminder_subject_24h) {
+            setReminderSubject24h(data.reminder_subject_24h)
+          }
+          if (data.reminder_body_24h) {
+            setReminderBody24h(data.reminder_body_24h)
+          }
+          if (data.reminder_subject_2h) {
+            setReminderSubject2h(data.reminder_subject_2h)
+          }
+          if (data.reminder_body_2h) {
+            setReminderBody2h(data.reminder_body_2h)
+          }
         }
       } catch (err) {
         console.error('Erro ao carregar configurações:', err)
@@ -123,6 +153,27 @@ export default function SettingsPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validação estrita dos textos dos lembretes (Etapa 5)
+    const val24h = validateReminderTemplate(reminderSubject24h, reminderBody24h)
+    if (!val24h.valid) {
+      toast({
+        title: 'Modelo 24h inválido',
+        description: val24h.error,
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const val2h = validateReminderTemplate(reminderSubject2h, reminderBody2h)
+    if (!val2h.valid) {
+      toast({
+        title: 'Modelo 2h inválido',
+        description: val2h.error,
+        variant: 'destructive',
+      })
+      return
+    }
 
     // Validação estrita dos campos de remetente
     if (!validateSenderFormat(reminderSenderEmail)) {
@@ -158,11 +209,15 @@ export default function SettingsPage() {
         reminder_enable_24h: reminderEnable24h,
         reminder_enable_2h: reminderEnable2h,
         reminder_test_mode: reminderTestMode,
+        reminder_subject_24h: reminderSubject24h.trim(),
+        reminder_body_24h: reminderBody24h.trim(),
+        reminder_subject_2h: reminderSubject2h.trim(),
+        reminder_body_2h: reminderBody2h.trim(),
       })
       toast({
         title: 'Configurações salvas com sucesso!',
         description:
-          'Dados da clínica, remetentes e lembretes automáticos atualizados com sucesso.',
+          'Dados da clínica, remetentes, textos de lembrete e automações salvos com sucesso.',
       })
     } catch {
       toast({
@@ -173,6 +228,66 @@ export default function SettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // Disparo de teste para o e-mail de comprovantes da clínica (independente do modo de teste)
+  const handleSendTest = async (kind: '24h' | '2h') => {
+    const subject = kind === '24h' ? reminderSubject24h : reminderSubject2h
+    const body = kind === '24h' ? reminderBody24h : reminderBody2h
+
+    // Valida antes de disparar
+    const validation = validateReminderTemplate(subject, body)
+    if (!validation.valid) {
+      toast({
+        title: 'Modelo inválido para envio de teste',
+        description: validation.error,
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (kind === '24h') setSendingTest24h(true)
+    else setSendingTest2h(true)
+
+    try {
+      const res = await clinicSettingsService.testReminderTemplate({
+        kind,
+        subject,
+        body,
+      })
+      toast({
+        title: 'E-mail de teste disparado com sucesso!',
+        description: `Entregue para ${res.recipient} com o assunto "${res.subject}".`,
+      })
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Falha ao enviar e-mail de teste.'
+      toast({
+        title: 'Erro no envio de teste',
+        description: errMsg,
+        variant: 'destructive',
+      })
+    } finally {
+      if (kind === '24h') setSendingTest24h(false)
+      else setSendingTest2h(false)
+    }
+  }
+
+  const handleReset24h = () => {
+    setReminderSubject24h(DEFAULT_REMINDER_SUBJECT_24H)
+    setReminderBody24h(DEFAULT_REMINDER_BODY)
+    toast({
+      title: 'Texto padrão restaurado (24h)',
+      description: 'Lembre-se de clicar em "Salvar Alterações" para gravar.',
+    })
+  }
+
+  const handleReset2h = () => {
+    setReminderSubject2h(DEFAULT_REMINDER_SUBJECT_2H)
+    setReminderBody2h(DEFAULT_REMINDER_BODY)
+    toast({
+      title: 'Texto padrão restaurado (2h)',
+      description: 'Lembre-se de clicar em "Salvar Alterações" para gravar.',
+    })
   }
 
   if (loading) {
@@ -521,6 +636,87 @@ export default function SettingsPage() {
                   type="submit"
                   disabled={saving}
                   className="bg-rose-900 hover:bg-rose-950 text-white text-xs gap-1.5 px-6"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      Salvar Alterações
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Card novo "Textos dos e-mails" posicionado abaixo de Lembretes automáticos */}
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-rose-800" />
+              Textos dos e-mails
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Personalize o assunto e o corpo dos lembretes automáticos enviados aos pacientes. Os
+              campos entre chaves duplas serão substituídos automaticamente pelos dados de cada
+              agendamento.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <form onSubmit={handleSave} className="space-y-6">
+              {/* Item 1: Lembrete ao paciente (24h) */}
+              <ReminderTemplateEditor
+                kind="24h"
+                title="Lembrete ao paciente (24h)"
+                description="Disparado 24 horas antes do horário do procedimento (véspera)."
+                subject={reminderSubject24h}
+                body={reminderBody24h}
+                defaultSubject={DEFAULT_REMINDER_SUBJECT_24H}
+                defaultBody={DEFAULT_REMINDER_BODY}
+                clinicName={clinicName}
+                clinicAddress={clinicAddress}
+                clinicPhone={phone}
+                notificationEmail={notificationEmail}
+                onSubjectChange={setReminderSubject24h}
+                onBodyChange={setReminderBody24h}
+                onResetToDefault={handleReset24h}
+                onSendTest={() => handleSendTest('24h')}
+                sendingTest={sendingTest24h}
+              />
+
+              {/* Item 2: Lembrete ao paciente (2h) */}
+              <ReminderTemplateEditor
+                kind="2h"
+                title="Lembrete ao paciente (2h)"
+                description="Disparado 2 horas antes do procedimento no próprio dia."
+                subject={reminderSubject2h}
+                body={reminderBody2h}
+                defaultSubject={DEFAULT_REMINDER_SUBJECT_2H}
+                defaultBody={DEFAULT_REMINDER_BODY}
+                clinicName={clinicName}
+                clinicAddress={clinicAddress}
+                clinicPhone={phone}
+                notificationEmail={notificationEmail}
+                onSubjectChange={setReminderSubject2h}
+                onBodyChange={setReminderBody2h}
+                onResetToDefault={handleReset2h}
+                onSendTest={() => handleSendTest('2h')}
+                sendingTest={sendingTest2h}
+              />
+
+              <div className="pt-2 flex items-center justify-between gap-4 border-t border-slate-200">
+                <p className="text-[11px] text-muted-foreground">
+                  As alterações salvas entram em vigor para todos os próximos disparos automáticos.
+                </p>
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-rose-900 hover:bg-rose-950 text-white text-xs gap-1.5 px-6 shrink-0"
                 >
                   {saving ? (
                     <>

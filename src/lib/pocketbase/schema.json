@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-04T02:43:05.372Z",
+  "generatedAt": "2026-11-04T03:05:43.972Z",
   "collections": [
     {
       "name": "users",
@@ -145,6 +145,30 @@
         {
           "name": "reminder_test_mode",
           "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reminder_subject_24h",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reminder_body_24h",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reminder_subject_2h",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reminder_body_2h",
+          "type": "text",
           "required": false,
           "system": false
         }
