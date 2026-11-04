@@ -139,62 +139,109 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
     </body></html>
   `
 
-  try {
-    var r = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
-      from: senderEmail,
-      to: [email],
-      subject: subject,
-      html: html,
-    })
+  // Envio prioritário: chamada DIRETA à API REST do Resend com RESEND_API_KEY do cofre
+  var resendApiKey = $os.getenv('RESEND_API_KEY')
+  var emailSent = false
+  var lastErrorMsg = ''
 
-    if (r && r.successful) {
-      var resData = r.data || {}
-      console.log(
-        'Codigo de verificacao ' +
-          code +
-          ' enviado com sucesso para ' +
-          email +
-          '. Resend ID: ' +
-          (resData.id || ''),
-      )
-    } else {
-      var errMsg = r && r.error ? String(r.error) : 'erro desconhecido'
-      console.log('Falha ao enviar e-mail via conector Resend: ' + errMsg)
-      var clientMsg =
-        'Não foi possível enviar o código por e-mail no momento. Por favor, tente novamente em instantes.'
-      if (
-        errMsg.indexOf('daily_quota_exceeded') !== -1 ||
-        errMsg.indexOf('quota') !== -1 ||
-        errMsg.indexOf('429') !== -1
-      ) {
-        clientMsg =
-          'Limite diário de envio de e-mails da conta Resend atingido (cota diária esgotada). Entre em contato com a clínica ou tente novamente mais tarde.'
-      } else if (
-        errMsg.indexOf('API key') !== -1 ||
-        errMsg.indexOf('401') !== -1 ||
-        errMsg.indexOf('403') !== -1 ||
-        errMsg.indexOf('restricted') !== -1
-      ) {
-        clientMsg =
-          'Falha de autenticação no serviço de e-mail (Resend). A clínica precisa verificar a conexão da conta.'
-      }
-      return e.json(500, {
-        success: false,
-        message: clientMsg,
-        detail: errMsg,
+  if (resendApiKey) {
+    try {
+      var directRes = $http.send({
+        url: 'https://api.resend.com/emails',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + resendApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: senderEmail,
+          to: [email],
+          subject: subject,
+          html: html,
+        }),
       })
+
+      if (directRes.statusCode >= 200 && directRes.statusCode < 300) {
+        var directData = directRes.json || {}
+        console.log(
+          'Codigo de verificacao ' +
+            code +
+            ' enviado com sucesso para ' +
+            email +
+            ' via Resend REST API direta. Resend ID: ' +
+            (directData.id || ''),
+        )
+        emailSent = true
+      } else {
+        lastErrorMsg =
+          'Falha ao enviar via Resend API (' + directRes.statusCode + '): ' + directRes.raw
+        console.log(lastErrorMsg)
+      }
+    } catch (errDirect) {
+      lastErrorMsg = 'Falha ao chamar API REST do Resend: ' + errDirect.message
+      console.log(lastErrorMsg)
     }
-  } catch (err) {
-    console.log('Falha ao enviar e-mail do codigo de verificacao: ' + err.message)
-    var clientErr = 'Falha ao enviar e-mail: ' + err.message
+  } else {
+    console.log('Aviso: Segredo RESEND_API_KEY nao encontrado no ambiente.')
+  }
+
+  // Fallback via conector apenas se o envio direto não tiver ocorrido ou falhado
+  if (!emailSent) {
+    try {
+      var r = $connectors.executeAsOwner('RESEND_SEND_EMAIL', {
+        from: senderEmail,
+        to: [email],
+        subject: subject,
+        html: html,
+      })
+
+      if (r && r.successful) {
+        var resData = r.data || {}
+        console.log(
+          'Codigo de verificacao ' +
+            code +
+            ' enviado com sucesso para ' +
+            email +
+            ' via conector Resend. Resend ID: ' +
+            (resData.id || ''),
+        )
+        emailSent = true
+      } else {
+        var errMsg = r && r.error ? String(r.error) : 'erro desconhecido'
+        console.log('Falha ao enviar e-mail via conector Resend: ' + errMsg)
+        lastErrorMsg = lastErrorMsg ? lastErrorMsg + ' | Conector: ' + errMsg : errMsg
+      }
+    } catch (err) {
+      console.log('Falha ao enviar e-mail via conector Resend: ' + err.message)
+      lastErrorMsg = lastErrorMsg ? lastErrorMsg + ' | Conector: ' + err.message : err.message
+    }
+  }
+
+  if (!emailSent) {
+    var clientMsg =
+      'Não foi possível enviar o código por e-mail no momento. Por favor, tente novamente em instantes.'
     if (
-      err.message &&
-      (err.message.indexOf('daily_quota_exceeded') !== -1 || err.message.indexOf('quota') !== -1)
+      lastErrorMsg.indexOf('daily_quota_exceeded') !== -1 ||
+      lastErrorMsg.indexOf('quota') !== -1 ||
+      lastErrorMsg.indexOf('429') !== -1
     ) {
-      clientErr =
+      clientMsg =
         'Limite diário de envio de e-mails da conta Resend atingido (cota diária esgotada). Entre em contato com a clínica ou tente novamente mais tarde.'
+    } else if (
+      lastErrorMsg.indexOf('API key') !== -1 ||
+      lastErrorMsg.indexOf('401') !== -1 ||
+      lastErrorMsg.indexOf('403') !== -1 ||
+      lastErrorMsg.indexOf('restricted') !== -1 ||
+      lastErrorMsg.indexOf('not authorized') !== -1
+    ) {
+      clientMsg =
+        'Falha de autenticação no serviço de e-mail (Resend). A clínica precisa verificar a chave de envio.'
     }
-    return e.json(500, { success: false, message: clientErr })
+    return e.json(500, {
+      success: false,
+      message: clientMsg,
+      detail: lastErrorMsg,
+    })
   }
 
   // Registra auditoria
