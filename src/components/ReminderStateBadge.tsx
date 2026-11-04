@@ -355,33 +355,19 @@ export function ReminderStateBadge({
     <TooltipProvider delayDuration={150}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex flex-col gap-1 items-start cursor-pointer inline-flex">
+          <div className="inline-flex items-center gap-1.5 cursor-pointer flex-wrap">
             <Badge
-              className={`${meta.className} font-medium text-[10px] gap-0.5 shadow-none transition-opacity hover:opacity-90`}
+              className={`${meta.className} font-medium text-[10px] gap-0.5 shadow-none transition-opacity hover:opacity-90 whitespace-nowrap`}
             >
               {meta.icon}
               {meta.label}
             </Badge>
 
             {emailMismatch && (
-              <Badge className="bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-50 font-medium text-[10px] gap-0.5">
+              <Badge className="bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-50 font-medium text-[10px] gap-0.5 whitespace-nowrap">
                 <AlertTriangle className="w-3 h-3 text-amber-600" />
                 Conferir e-mail
               </Badge>
-            )}
-
-            {procedureFormatted && (
-              <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                <CheckCircle2 className="w-2.5 h-2.5 text-slate-400" />
-                Proc.: {procedureFormatted}
-              </span>
-            )}
-
-            {sentSummaryLabel && (
-              <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
-                <MailCheck className="w-2.5 h-2.5 text-emerald-600" />
-                {sentSummaryLabel}
-              </span>
             )}
 
             {(normalizedState === 'falha no envio' || normalizedState === 'falha') && onRetry && (
@@ -393,7 +379,7 @@ export function ReminderStateBadge({
                   e.stopPropagation()
                   onRetry(appointment.id)
                 }}
-                className="h-6 px-1.5 text-[10px] text-red-700 border-red-300 hover:bg-red-50 hover:text-red-800 mt-0.5 gap-1"
+                className="h-5 px-1.5 text-[10px] text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
                 title="Tentar reenviar lembrete via Resend"
               >
                 <RefreshCw className={`w-2.5 h-2.5 ${isRetrying ? 'animate-spin' : ''}`} />

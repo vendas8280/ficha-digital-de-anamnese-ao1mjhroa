@@ -49,7 +49,7 @@ describe('ReminderStateBadge helpers', () => {
     expect(line).toBe('Lembrete 2h: enviado em 03/11/2026 às 23:09')
   })
 
-  it('exibe sent_to real como destinatário no ReminderStateBadge e prefixo Proc.:', () => {
+  it('formata data e hora do procedimento para tooltip de agendamento', () => {
     // Validação estática de tipagem e coerência dos helpers
     expect(formatProcedureDateTime('2026-11-04 00:00:00.000Z', '02:09')).toBe('04/11/2026 às 02:09')
   })
