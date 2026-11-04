@@ -81,20 +81,19 @@ export default function DashboardPage() {
   const [createdLinkUrl, setCreatedLinkUrl] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [resendingId, setResendingId] = useState<string | null>(null)
+  const [retryingReminderId, setRetryingReminderId] = useState<string | null>(null)
 
   // Agendamento opcional (seção do gerador de ficha)
   const [showScheduling, setShowScheduling] = useState(false)
   const [schedDate, setSchedDate] = useState('') // YYYY-MM-DD
   const [schedTime, setSchedTime] = useState('') // HH:MM
   const [notifyPatient, setNotifyPatient] = useState(true)
-  const [notifyClinic, setNotifyClinic] = useState(true)
 
   const resetScheduling = () => {
     setShowScheduling(false)
     setSchedDate('')
     setSchedTime('')
     setNotifyPatient(true)
-    setNotifyClinic(true)
   }
 
   // Ex.: "2026-11-05" -> "05/11/2026" (sem deslocamento de fuso)
@@ -203,7 +202,7 @@ export default function DashboardPage() {
             procedure_time: schedTime.trim() || undefined,
             procedure: newFormType,
             notify_patient: notifyPatient,
-            notify_clinic: notifyClinic,
+            notify_clinic: false,
           })
         } catch (err) {
           console.warn('Falha ao salvar agendamento:', err)
@@ -241,6 +240,35 @@ export default function DashboardPage() {
       description: 'Pronto para colar no WhatsApp ou enviar por e-mail.',
     })
     setTimeout(() => setCopiedId(null), 2500)
+  }
+
+  const handleRetryReminder = async (appointmentId: string) => {
+    setRetryingReminderId(appointmentId)
+    try {
+      const res = await appointmentsService.retryReminder(appointmentId)
+      if (res.success) {
+        toast({
+          title: 'Lembrete reenviado',
+          description: res.message || 'Lembrete disparado com sucesso via Resend!',
+        })
+        loadForms()
+      } else {
+        toast({
+          title: 'Falha no reenvio',
+          description: 'Não foi possível disparar o lembrete.',
+          variant: 'destructive',
+        })
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao reenviar lembrete.'
+      toast({
+        title: 'Erro ao reenviar',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setRetryingReminderId(null)
+    }
   }
 
   const handleDeleteForm = async (id: string, name?: string) => {
@@ -590,20 +618,6 @@ export default function DashboardPage() {
                               onCheckedChange={setNotifyPatient}
                             />
                           </div>
-
-                          <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                            <Label
-                              htmlFor="lembrarClinica"
-                              className="text-xs font-medium text-slate-700 cursor-pointer"
-                            >
-                              Enviar lembrete para a clínica
-                            </Label>
-                            <Switch
-                              id="lembrarClinica"
-                              checked={notifyClinic}
-                              onCheckedChange={setNotifyClinic}
-                            />
-                          </div>
                         </div>
                       )}
                     </div>
@@ -895,6 +909,8 @@ export default function DashboardPage() {
                             appointment={itemAppointment}
                             formEmail={item.patient_email}
                             reminders={reminders}
+                            onRetry={handleRetryReminder}
+                            isRetrying={retryingReminderId === itemAppointment?.id}
                           />
                         </td>
 

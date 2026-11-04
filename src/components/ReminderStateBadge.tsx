@@ -10,8 +10,10 @@ import {
   Clock,
   Mail,
   MailCheck,
+  RefreshCw,
   UserX,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { AppointmentReminderRecord, ProcedureAppointmentRecord } from '@/services/forms'
 import { formatDateBR } from '@/lib/formatters'
 
@@ -52,6 +54,21 @@ const STATE_META: Record<string, { label: string; className: string; icon: React
     label: 'Enviado',
     className: 'bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100',
     icon: <MailCheck className="w-3 h-3 mr-1" />,
+  },
+  'falha no envio': {
+    label: 'Falha no envio',
+    className: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
+    icon: <AlertTriangle className="w-3 h-3 mr-1" />,
+  },
+  falha: {
+    label: 'Falha no envio',
+    className: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
+    icon: <AlertTriangle className="w-3 h-3 mr-1" />,
+  },
+  'não enviado por atraso': {
+    label: 'Não enviado por atraso',
+    className: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
+    icon: <Clock className="w-3 h-3 mr-1" />,
   },
   'sem ficha, lembrete não enviado': {
     label: 'Sem ficha, não enviado',
@@ -147,10 +164,14 @@ export function ReminderStateBadge({
   appointment,
   formEmail,
   reminders,
+  onRetry,
+  isRetrying,
 }: {
   appointment?: ProcedureAppointmentRecord
   formEmail?: string
   reminders?: AppointmentReminderRecord[]
+  onRetry?: (appointmentId: string) => void
+  isRetrying?: boolean
 }) {
   // 1. Sem agendamento -> traço "—" em cinza, SEM selo (nunca "Sim")
   if (!appointment) {
@@ -236,6 +257,23 @@ export function ReminderStateBadge({
                 <CheckCircle2 className="w-2.5 h-2.5 text-slate-400" />
                 {formatDateTimePretty(appointment.procedure_date, appointment.procedure_time)}
               </span>
+            )}
+
+            {(normalizedState === 'falha no envio' || normalizedState === 'falha') && onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isRetrying}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRetry(appointment.id)
+                }}
+                className="h-6 px-1.5 text-[10px] text-red-700 border-red-300 hover:bg-red-50 hover:text-red-800 mt-0.5 gap-1"
+                title="Tentar reenviar lembrete via Resend"
+              >
+                <RefreshCw className={`w-2.5 h-2.5 ${isRetrying ? 'animate-spin' : ''}`} />
+                Reenviar
+              </Button>
             )}
           </div>
         </TooltipTrigger>

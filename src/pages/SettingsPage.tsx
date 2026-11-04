@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Building,
   Mail,
@@ -18,6 +26,9 @@ import {
   UserCheck,
   MapPin,
   FileBadge,
+  Bell,
+  Clock,
+  FlaskConical,
 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -37,6 +48,15 @@ export default function SettingsPage() {
   const [professionalRegister, setProfessionalRegister] = useState('')
   const [clinicAddress, setClinicAddress] = useState('')
   const [phone, setPhone] = useState('')
+
+  // Campos de lembrete adicionados pela Etapa 3
+  const [reminderSenderEmail, setReminderSenderEmail] = useState(
+    'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>',
+  )
+  const [reminderMinAdvanceHours, setReminderMinAdvanceHours] = useState<'6' | '12' | '24'>('6')
+  const [reminderEnable24h, setReminderEnable24h] = useState(true)
+  const [reminderEnable2h, setReminderEnable2h] = useState(true)
+  const [reminderTestMode, setReminderTestMode] = useState(true)
 
   // Check auth
   useEffect(() => {
@@ -58,6 +78,29 @@ export default function SettingsPage() {
           if (data.technical_responsible) setTechnicalResponsible(data.technical_responsible)
           if (data.professional_register) setProfessionalRegister(data.professional_register)
           if (data.clinic_address) setClinicAddress(data.clinic_address)
+
+          // Lembretes
+          if (data.reminder_sender_email) {
+            setReminderSenderEmail(data.reminder_sender_email)
+          } else if (data.sender_email) {
+            setReminderSenderEmail(data.sender_email)
+          }
+          if (
+            data.reminder_min_advance_hours === '6' ||
+            data.reminder_min_advance_hours === '12' ||
+            data.reminder_min_advance_hours === '24'
+          ) {
+            setReminderMinAdvanceHours(data.reminder_min_advance_hours)
+          }
+          if (typeof data.reminder_enable_24h === 'boolean') {
+            setReminderEnable24h(data.reminder_enable_24h)
+          }
+          if (typeof data.reminder_enable_2h === 'boolean') {
+            setReminderEnable2h(data.reminder_enable_2h)
+          }
+          if (typeof data.reminder_test_mode === 'boolean') {
+            setReminderTestMode(data.reminder_test_mode)
+          }
         }
       } catch (err) {
         console.error('Erro ao carregar configurações:', err)
@@ -83,11 +126,16 @@ export default function SettingsPage() {
         technical_responsible: technicalResponsible,
         professional_register: professionalRegister,
         clinic_address: clinicAddress,
+        reminder_sender_email: reminderSenderEmail,
+        reminder_min_advance_hours: reminderMinAdvanceHours,
+        reminder_enable_24h: reminderEnable24h,
+        reminder_enable_2h: reminderEnable2h,
+        reminder_test_mode: reminderTestMode,
       })
       toast({
         title: 'Configurações salvas com sucesso!',
         description:
-          'Dados de remetente, profissional responsável e e-mail de notificações atualizados.',
+          'Dados da clínica, remetentes e lembretes automáticos atualizados com sucesso.',
       })
     } catch {
       toast({
@@ -171,8 +219,58 @@ export default function SettingsPage() {
                   <code>
                     Ficha Digital - Andresa Souza Clinic &lt;ficha@andresasouzaclinic.com.br&gt;
                   </code>
-                  . Enviado via conta Resend do proprietário da clínica.
+                  . Utilizado no envio das fichas e comprovantes aos pacientes e clínica.
                 </p>
+              </div>
+
+              {/* Campos adicionados no card de e-mails conforme especificação */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-slate-100">
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor="reminderSenderEmail"
+                    className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-slate-500" />
+                    E-mail do remetente (Lembretes) *
+                  </Label>
+                  <Input
+                    id="reminderSenderEmail"
+                    value={reminderSenderEmail}
+                    onChange={(e) => setReminderSenderEmail(e.target.value)}
+                    required
+                    placeholder="Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>"
+                    className="text-sm font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Aparece como remetente do e-mail de lembrete enviado à paciente.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor="reminderMinAdvance"
+                    className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
+                    Antecedência mínima *
+                  </Label>
+                  <Select
+                    value={reminderMinAdvanceHours}
+                    onValueChange={(val: '6' | '12' | '24') => setReminderMinAdvanceHours(val)}
+                  >
+                    <SelectTrigger id="reminderMinAdvance" className="text-sm">
+                      <SelectValue placeholder="Selecione a antecedência" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="6">6 horas antes</SelectItem>
+                      <SelectItem value="12">12 horas antes</SelectItem>
+                      <SelectItem value="24">24 horas antes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Tempo mínimo antes do procedimento para considerar o lembrete elegível.
+                  </p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -289,6 +387,105 @@ export default function SettingsPage() {
                     oficial da Andresa Souza Clinic.
                   </p>
                 </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-rose-900 hover:bg-rose-950 text-white text-xs gap-1.5 px-6"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      Salvar Alterações
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Card novo "Lembretes automáticos" com 3 interruptores ligados por padrão */}
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Bell className="w-5 h-5 text-rose-800" />
+              Lembretes automáticos
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Controle o disparo automático dos lembretes aos pacientes antes dos procedimentos.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="flex items-center justify-between gap-4 p-3.5 rounded-lg border border-slate-200 bg-white">
+                <div className="space-y-0.5">
+                  <Label
+                    htmlFor="enable24h"
+                    className="text-xs font-semibold text-slate-800 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
+                    Lembrete 24 horas antes
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Envia lembrete na véspera com o assunto: &quot;Lembrete: seu procedimento é
+                    amanhã às [hora]&quot;.
+                  </p>
+                </div>
+                <Switch
+                  id="enable24h"
+                  checked={reminderEnable24h}
+                  onCheckedChange={setReminderEnable24h}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4 p-3.5 rounded-lg border border-slate-200 bg-white">
+                <div className="space-y-0.5">
+                  <Label
+                    htmlFor="enable2h"
+                    className="text-xs font-semibold text-slate-800 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
+                    Lembrete 2 horas antes
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Envia lembrete no próprio dia com o assunto: &quot;Lembrete: seu procedimento é
+                    hoje às [hora]&quot;.
+                  </p>
+                </div>
+                <Switch
+                  id="enable2h"
+                  checked={reminderEnable2h}
+                  onCheckedChange={setReminderEnable2h}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4 p-3.5 rounded-lg border border-amber-200 bg-amber-50/50">
+                <div className="space-y-0.5">
+                  <Label
+                    htmlFor="testMode"
+                    className="text-xs font-semibold text-amber-950 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FlaskConical className="w-3.5 h-3.5 text-amber-700" />
+                    Modo de teste
+                  </Label>
+                  <p className="text-[11px] text-amber-900/80">
+                    Enquanto ligado, tudo vai para o e-mail de comprovantes da clínica com
+                    &quot;[TESTE]&quot; no assunto, e a paciente não recebe.
+                  </p>
+                </div>
+                <Switch
+                  id="testMode"
+                  checked={reminderTestMode}
+                  onCheckedChange={setReminderTestMode}
+                />
               </div>
 
               <div className="pt-2 flex justify-end">

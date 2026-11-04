@@ -39,7 +39,12 @@ export interface AppointmentReminderRecord {
   appointment: string
   kind: '24h' | '2h'
   scheduled_for: string
-  status: 'programado' | 'enviado' | 'cancelado'
+  status: 'programado' | 'enviado' | 'falha' | 'atrasado' | 'cancelado'
+  attempts?: number
+  last_attempt_at?: string
+  last_error?: string
+  sent_at?: string
+  sent_to?: string
   created: string
   updated: string
 }
@@ -71,6 +76,11 @@ export interface ClinicSettingsRecord {
   professional_register?: string
   clinic_cnpj?: string
   clinic_address?: string
+  reminder_sender_email?: string
+  reminder_min_advance_hours?: '6' | '12' | '24' | string
+  reminder_enable_24h?: boolean
+  reminder_enable_2h?: boolean
+  reminder_test_mode?: boolean
   created: string
   updated: string
 }
@@ -340,6 +350,15 @@ export const appointmentsService = {
       return []
     }
   },
+
+  // Disparo manual/reenvio de lembrete do agendamento (usado pelo botão Reenviar em falha)
+  async retryReminder(appointmentId: string): Promise<{ success: boolean; message?: string }> {
+    const res = await pb.send('/backend/v1/appointments/retry-reminder', {
+      method: 'POST',
+      body: { appointment_id: appointmentId },
+    })
+    return res as { success: boolean; message?: string }
+  },
 }
 
 export const clinicSettingsService = {
@@ -365,6 +384,11 @@ export const clinicSettingsService = {
     professional_register?: string
     clinic_cnpj?: string
     clinic_address?: string
+    reminder_sender_email?: string
+    reminder_min_advance_hours?: '6' | '12' | '24' | string
+    reminder_enable_24h?: boolean
+    reminder_enable_2h?: boolean
+    reminder_test_mode?: boolean
   }): Promise<ClinicSettingsRecord> {
     const existing = await this.getSettings()
     if (existing) {

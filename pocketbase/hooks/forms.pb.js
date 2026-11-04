@@ -2025,9 +2025,9 @@ onRecordAfterUpdateSuccess((e) => {
 
     // --- Auxiliares locais dos lembretes (autocontidos no callback) ---
 
-    // Data/hora do procedimento do agendamento: a data é gravada no painel
-    // como dia de Brasília e hora HH:MM; a comparação usa Date.UTC sobre
-    // essas partes (mesma convenção do cron marcarSemFicha).
+    // Data/hora do procedimento do agendamento convertida para timestamp UTC real.
+    // procedure_date é a data em America/Sao_Paulo (UTC-3) e procedure_time é HH:MM em UTC-3.
+    // Logo, UTC = hora_local + 3 horas.
     function lembrarApptDateTime(a) {
       var dateVal = a.getString('procedure_date')
       var timeVal = (a.getString('procedure_time') || '').trim()
@@ -2049,7 +2049,7 @@ onRecordAfterUpdateSuccess((e) => {
         parseInt(m[1], 10),
         parseInt(m[2], 10) - 1,
         parseInt(m[3], 10),
-        hh,
+        hh + 3, // Converte hora local America/Sao_Paulo (UTC-3) para UTC
         mm,
         0,
         0,
@@ -2081,11 +2081,7 @@ onRecordAfterUpdateSuccess((e) => {
       return rem
     }
 
-    // --- LEMBRETES DE AGENDAMENTO (etapa B): captura de e-mail + cálculo ---
-    // Ao assinar a ficha, captura o e-mail informado pelo paciente no
-    // agendamento vinculado ao link usado e programa os lembretes a partir
-    // da data e hora do procedimento. Nenhum e-mail é enviado aqui —
-    // apenas o estado é registrado no banco.
+    // --- LEMBRETES DE AGENDAMENTO (Etapa 3): captura de e-mail + cálculo respeitando antecedência mínima ---
     try {
       var remAppts = $app.findRecordsByFilter(
         'procedure_appointments',
@@ -2100,6 +2096,34 @@ onRecordAfterUpdateSuccess((e) => {
         var remFormEmail = (record.getString('patient_email') || '').trim().toLowerCase()
         var remApptEmail = (remAppt.getString('patient_email') || '').trim().toLowerCase()
         var remDirty = false
+
+        // Obter configurações de antecedência mínima e chaves ativas
+        var sMinAdv = 6
+        var sEnable24 = true
+        var sEnable2 = true
+        try {
+          var cSettings = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
+          if (cSettings && cSettings.length > 0) {
+            var cs = cSettings[0]
+            var mAdvStr = cs.getString('reminder_min_advance_hours')
+            if (mAdvStr) {
+              var pAdv = parseInt(mAdvStr, 10)
+              if (!isNaN(pAdv)) sMinAdv = pAdv
+            }
+            if (
+              cs.get('reminder_enable_24h') !== undefined &&
+              cs.get('reminder_enable_24h') !== null
+            ) {
+              sEnable24 = cs.getBool('reminder_enable_24h')
+            }
+            if (
+              cs.get('reminder_enable_2h') !== undefined &&
+              cs.get('reminder_enable_2h') !== null
+            ) {
+              sEnable2 = cs.getBool('reminder_enable_2h')
+            }
+          }
+        } catch (_) {}
 
         if (remAppt.getString('status') === 'cancelado') {
           // Agendamento cancelado: cancela os lembretes existentes.
@@ -2124,19 +2148,35 @@ onRecordAfterUpdateSuccess((e) => {
           if (remApptAt) {
             var remHoursLeft = (remApptAt.getTime() - Date.now()) / 3600000
             var remNewState = ''
-            if (remHoursLeft > 24) {
-              // Faltam mais de 24h: programa os dois lembretes.
-              lembrarEnsure(remAppt.id, '24h', new Date(remApptAt.getTime() - 24 * 3600000))
-              lembrarEnsure(remAppt.id, '2h', new Date(remApptAt.getTime() - 2 * 3600000))
-              remNewState = 'lembretes programados'
-            } else if (remHoursLeft > 2) {
-              // Menos de 24h e mais de 2h: nunca programa o de 24h atrasado.
-              lembrarEnsure(remAppt.id, '2h', new Date(remApptAt.getTime() - 2 * 3600000))
-              remNewState = 'parcial: apenas 2h'
-            } else {
-              // Menos de 2h: fora do prazo, nenhum lembrete.
+
+            // Respeita antecedência mínima configurada:
+            // Se as horas restantes até o procedimento forem menores que a antecedência mínima
+            // configurada (6, 12 ou 24h), considera fora do prazo.
+            if (remHoursLeft < sMinAdv || remHoursLeft <= 2) {
               remNewState = 'fora do prazo'
+            } else if (remHoursLeft > 24) {
+              // Faltam mais de 24h: programa ambos conforme interruptores
+              if (sEnable24) {
+                lembrarEnsure(remAppt.id, '24h', new Date(remApptAt.getTime() - 24 * 3600000))
+              }
+              if (sEnable2) {
+                lembrarEnsure(remAppt.id, '2h', new Date(remApptAt.getTime() - 2 * 3600000))
+              }
+              remNewState = sEnable24
+                ? 'lembretes programados'
+                : sEnable2
+                  ? 'parcial: apenas 2h'
+                  : 'fora do prazo'
+            } else {
+              // Entre antecedência mínima e 24h: nunca programa o de 24h atrasado
+              if (sEnable2) {
+                lembrarEnsure(remAppt.id, '2h', new Date(remApptAt.getTime() - 2 * 3600000))
+                remNewState = 'parcial: apenas 2h'
+              } else {
+                remNewState = 'fora do prazo'
+              }
             }
+
             if (remAppt.getString('reminder_state') !== remNewState) {
               remAppt.set('reminder_state', remNewState)
               remDirty = true
@@ -2145,10 +2185,7 @@ onRecordAfterUpdateSuccess((e) => {
         }
 
         // Captura do e-mail da ficha: quando o agendamento ainda não tem
-        // e-mail registrado, grava o último informado pelo paciente. Se
-        // divergir de um e-mail já registrado, preserva os dois lados —
-        // o painel marca "Conferir e-mail" pela divergência entre o
-        // e-mail do agendamento e o da ficha.
+        // e-mail registrado, grava o último informado pelo paciente.
         if (remFormEmail && !remApptEmail) {
           remAppt.set('patient_email', remFormEmail)
           remDirty = true
