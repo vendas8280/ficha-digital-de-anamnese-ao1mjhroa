@@ -413,7 +413,28 @@ export const clinicSettingsService = {
     }
   },
 
-  // Disparo de teste de modelo de lembrete (Etapa 5)
+  // Disparo de teste de lembretes (dispara ambos os modelos 24h e 2h para o e-mail de comprovantes)
+  async sendTestReminders(params?: { kind?: '24h' | '2h' | 'both' }): Promise<{
+    success: boolean
+    recipient: string
+    count: number
+    dispatched: Array<{ kind: string; success: boolean; recipient: string; subject: string }>
+    message: string
+  }> {
+    const res = await pb.send('/backend/v1/appointments/test-reminder-template', {
+      method: 'POST',
+      body: { kind: params?.kind || 'both' },
+    })
+    return res as {
+      success: boolean
+      recipient: string
+      count: number
+      dispatched: Array<{ kind: string; success: boolean; recipient: string; subject: string }>
+      message: string
+    }
+  },
+
+  // Compatibilidade caso algum código ainda chame testReminderTemplate
   async testReminderTemplate(params: {
     kind: '24h' | '2h'
     subject?: string

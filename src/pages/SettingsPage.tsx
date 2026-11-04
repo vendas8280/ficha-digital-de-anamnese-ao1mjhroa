@@ -29,15 +29,8 @@ import {
   Bell,
   Clock,
   FlaskConical,
-  FileText,
+  Send,
 } from 'lucide-react'
-import { ReminderTemplateEditor } from '@/components/ReminderTemplateEditor'
-import {
-  DEFAULT_REMINDER_SUBJECT_24H,
-  DEFAULT_REMINDER_SUBJECT_2H,
-  DEFAULT_REMINDER_BODY,
-  validateReminderTemplate,
-} from '@/lib/reminderTemplates'
 
 export default function SettingsPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
@@ -66,15 +59,7 @@ export default function SettingsPage() {
   const [reminderEnable2h, setReminderEnable2h] = useState(true)
   const [reminderTestMode, setReminderTestMode] = useState(true)
 
-  // Textos dos e-mails de lembrete (Etapa 5)
-  const [reminderSubject24h, setReminderSubject24h] = useState(DEFAULT_REMINDER_SUBJECT_24H)
-  const [reminderBody24h, setReminderBody24h] = useState(DEFAULT_REMINDER_BODY)
-  const [reminderSubject2h, setReminderSubject2h] = useState(DEFAULT_REMINDER_SUBJECT_2H)
-  const [reminderBody2h, setReminderBody2h] = useState(DEFAULT_REMINDER_BODY)
-  const [savingCard24h, setSavingCard24h] = useState(false)
-  const [savingCard2h, setSavingCard2h] = useState(false)
-  const [sendingTest24h, setSendingTest24h] = useState(false)
-  const [sendingTest2h, setSendingTest2h] = useState(false)
+  const [sendingTestEmail, setSendingTestEmail] = useState(false)
 
   // Check auth
   useEffect(() => {
@@ -119,20 +104,6 @@ export default function SettingsPage() {
           if (typeof data.reminder_test_mode === 'boolean') {
             setReminderTestMode(data.reminder_test_mode)
           }
-
-          // Textos dos lembretes
-          if (data.reminder_subject_24h) {
-            setReminderSubject24h(data.reminder_subject_24h)
-          }
-          if (data.reminder_body_24h) {
-            setReminderBody24h(data.reminder_body_24h)
-          }
-          if (data.reminder_subject_2h) {
-            setReminderSubject2h(data.reminder_subject_2h)
-          }
-          if (data.reminder_body_2h) {
-            setReminderBody2h(data.reminder_body_2h)
-          }
         }
       } catch (err) {
         console.error('Erro ao carregar configurações:', err)
@@ -155,27 +126,6 @@ export default function SettingsPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    // Validação estrita dos textos dos lembretes (Etapa 5)
-    const val24h = validateReminderTemplate(reminderSubject24h, reminderBody24h)
-    if (!val24h.valid) {
-      toast({
-        title: 'Modelo 24h inválido',
-        description: val24h.error,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    const val2h = validateReminderTemplate(reminderSubject2h, reminderBody2h)
-    if (!val2h.valid) {
-      toast({
-        title: 'Modelo 2h inválido',
-        description: val2h.error,
-        variant: 'destructive',
-      })
-      return
-    }
 
     // Validação estrita dos campos de remetente
     if (!validateSenderFormat(reminderSenderEmail)) {
@@ -211,15 +161,10 @@ export default function SettingsPage() {
         reminder_enable_24h: reminderEnable24h,
         reminder_enable_2h: reminderEnable2h,
         reminder_test_mode: reminderTestMode,
-        reminder_subject_24h: reminderSubject24h.trim(),
-        reminder_body_24h: reminderBody24h.trim(),
-        reminder_subject_2h: reminderSubject2h.trim(),
-        reminder_body_2h: reminderBody2h.trim(),
       })
       toast({
         title: 'Configurações salvas com sucesso!',
-        description:
-          'Dados da clínica, remetentes, textos de lembrete e automações salvos com sucesso.',
+        description: 'Dados da clínica, remetentes e automações de lembrete salvos com sucesso.',
       })
     } catch {
       toast({
@@ -232,115 +177,31 @@ export default function SettingsPage() {
     }
   }
 
-  // Salvar card individualmente (24h)
-  const handleSaveCard24h = async (subject: string, body: string): Promise<boolean> => {
-    const val = validateReminderTemplate(subject, body)
-    if (!val.valid) {
-      toast({
-        title: 'Modelo 24h inválido',
-        description: val.error,
-        variant: 'destructive',
-      })
-      return false
-    }
-
-    setSavingCard24h(true)
-    try {
-      await clinicSettingsService.updateSettings({
-        reminder_subject_24h: subject.trim(),
-        reminder_body_24h: body.trim(),
-      })
-      setReminderSubject24h(subject.trim())
-      setReminderBody24h(body.trim())
-      toast({
-        title: 'Lembrete de 24 horas salvo!',
-        description: 'O texto do lembrete de véspera foi atualizado com sucesso.',
-      })
-      return true
-    } catch {
-      toast({
-        title: 'Erro ao salvar',
-        description: 'Não foi possível salvar o lembrete de 24 horas.',
-        variant: 'destructive',
-      })
-      return false
-    } finally {
-      setSavingCard24h(false)
-    }
-  }
-
-  // Salvar card individualmente (2h)
-  const handleSaveCard2h = async (subject: string, body: string): Promise<boolean> => {
-    const val = validateReminderTemplate(subject, body)
-    if (!val.valid) {
-      toast({
-        title: 'Modelo 2h inválido',
-        description: val.error,
-        variant: 'destructive',
-      })
-      return false
-    }
-
-    setSavingCard2h(true)
-    try {
-      await clinicSettingsService.updateSettings({
-        reminder_subject_2h: subject.trim(),
-        reminder_body_2h: body.trim(),
-      })
-      setReminderSubject2h(subject.trim())
-      setReminderBody2h(body.trim())
-      toast({
-        title: 'Lembrete de 2 horas salvo!',
-        description: 'O texto do lembrete do dia foi atualizado com sucesso.',
-      })
-      return true
-    } catch {
-      toast({
-        title: 'Erro ao salvar',
-        description: 'Não foi possível salvar o lembrete de 2 horas.',
-        variant: 'destructive',
-      })
-      return false
-    } finally {
-      setSavingCard2h(false)
-    }
-  }
-
-  // Disparo de teste para o e-mail de comprovantes da clínica
-  const handleSendTestCard = async (kind: '24h' | '2h', subject: string, body: string) => {
-    const validation = validateReminderTemplate(subject, body)
-    if (!validation.valid) {
-      toast({
-        title: 'Modelo inválido para envio de teste',
-        description: validation.error,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    if (kind === '24h') setSendingTest24h(true)
-    else setSendingTest2h(true)
+  // Disparo de teste de ambos os modelos de lembrete (24h e 2h)
+  const handleSendTestEmail = async () => {
+    setSendingTestEmail(true)
+    toast({
+      title: 'Enviando e-mails de teste...',
+      description: 'Disparando os modelos de 24h e 2h para o e-mail de comprovantes da clínica.',
+    })
 
     try {
-      const res = await clinicSettingsService.testReminderTemplate({
-        kind,
-        subject,
-        body,
-      })
+      const res = await clinicSettingsService.sendTestReminders({ kind: 'both' })
       toast({
-        title: 'E-mail de teste disparado com sucesso!',
-        description: `Entregue para ${res.recipient} com o assunto "${res.subject}".`,
+        title: 'E-mails de teste enviados!',
+        description:
+          res.message ||
+          `Os 2 e-mails de lembrete foram entregues para ${res.recipient} com "[TESTE]" no assunto.`,
       })
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Falha ao enviar e-mail de teste.'
+      const errMsg = err instanceof Error ? err.message : 'Falha ao enviar e-mails de teste.'
       toast({
         title: 'Erro no envio de teste',
         description: errMsg,
         variant: 'destructive',
       })
     } finally {
-      if (kind === '24h') setSendingTest24h(false)
-      else setSendingTest2h(false)
+      setSendingTestEmail(false)
     }
   }
 
@@ -685,7 +546,27 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="pt-2 flex justify-end">
+              <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSendTestEmail}
+                  disabled={sendingTestEmail || saving}
+                  className="text-xs border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900 gap-1.5"
+                >
+                  {sendingTestEmail ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-900" />
+                      Enviando e-mails de teste...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5 text-rose-800" />
+                      Enviar um e-mail de teste
+                    </>
+                  )}
+                </Button>
+
                 <Button
                   type="submit"
                   disabled={saving}
@@ -707,42 +588,6 @@ export default function SettingsPage() {
             </form>
           </CardContent>
         </Card>
-
-        {/* Seção Redesenhada: "Textos dos e-mails" com cards independentes */}
-        <div className="space-y-3 pt-2">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-lg font-bold text-[#2B2B33] flex items-center gap-2">
-                <FileText className="w-5 h-5 text-[#6B3FA0]" />
-                Textos dos e-mails
-              </h2>
-              <p className="text-xs text-[#6B6B76] mt-0.5">
-                Personalize o assunto e o corpo dos lembretes automáticos enviados aos pacientes. Os
-                campos entre chaves duplas serão substituídos automaticamente pelos dados de cada
-                agendamento.
-              </p>
-            </div>
-          </div>
-
-          <ReminderTemplateEditor
-            clinicName={clinicName}
-            clinicAddress={clinicAddress}
-            clinicPhone={phone}
-            notificationEmail={notificationEmail}
-            reminderSubject24h={reminderSubject24h}
-            reminderBody24h={reminderBody24h}
-            reminderSubject2h={reminderSubject2h}
-            reminderBody2h={reminderBody2h}
-            onSaveCard24h={handleSaveCard24h}
-            onSaveCard2h={handleSaveCard2h}
-            onSendTest24h={(s, b) => handleSendTestCard('24h', s, b)}
-            onSendTest2h={(s, b) => handleSendTestCard('2h', s, b)}
-            saving24h={savingCard24h}
-            saving2h={savingCard2h}
-            sendingTest24h={sendingTest24h}
-            sendingTest2h={sendingTest2h}
-          />
-        </div>
       </main>
     </div>
   )
