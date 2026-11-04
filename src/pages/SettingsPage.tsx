@@ -114,19 +114,46 @@ export default function SettingsPage() {
     }
   }, [isAuthenticated])
 
+  const validateSenderFormat = (sender: string): boolean => {
+    // Deve ser no formato: Nome <email@dominio.com>
+    // Exige Nome, abertura <, usuário, arroba, domínio com ponto e fechamento >
+    const regex = /^.+<[^\s@]+@[^\s@]+\.[^\s@]+>$/
+    return regex.test(sender.trim())
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validação estrita dos campos de remetente
+    if (!validateSenderFormat(reminderSenderEmail)) {
+      toast({
+        title: 'Formato de remetente inválido',
+        description: 'Informe o remetente completo, no formato Nome <email@dominio.com>.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (!validateSenderFormat(senderEmail)) {
+      toast({
+        title: 'Formato de remetente inválido',
+        description: 'Informe o remetente completo, no formato Nome <email@dominio.com>.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     setSaving(true)
     try {
       await clinicSettingsService.updateSettings({
         clinic_name: clinicName,
         notification_email: notificationEmail,
         phone,
-        sender_email: senderEmail,
+        sender_email: senderEmail.trim(),
         technical_responsible: technicalResponsible,
         professional_register: professionalRegister,
         clinic_address: clinicAddress,
-        reminder_sender_email: reminderSenderEmail,
+        reminder_sender_email: reminderSenderEmail.trim(),
         reminder_min_advance_hours: reminderMinAdvanceHours,
         reminder_enable_24h: reminderEnable24h,
         reminder_enable_2h: reminderEnable2h,
@@ -223,54 +250,55 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              {/* Campos adicionados no card de e-mails conforme especificação */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-slate-100">
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="reminderSenderEmail"
-                    className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
-                  >
-                    <Mail className="w-3.5 h-3.5 text-slate-500" />
-                    E-mail do remetente (Lembretes) *
-                  </Label>
-                  <Input
-                    id="reminderSenderEmail"
-                    value={reminderSenderEmail}
-                    onChange={(e) => setReminderSenderEmail(e.target.value)}
-                    required
-                    placeholder="Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>"
-                    className="text-sm font-mono"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Aparece como remetente do e-mail de lembrete enviado à paciente.
-                  </p>
-                </div>
+              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                <Label
+                  htmlFor="reminderSenderEmail"
+                  className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+                >
+                  <Mail className="w-3.5 h-3.5 text-slate-500" />
+                  E-mail do remetente (Lembretes) *
+                </Label>
+                <Input
+                  id="reminderSenderEmail"
+                  value={reminderSenderEmail}
+                  onChange={(e) => setReminderSenderEmail(e.target.value)}
+                  required
+                  placeholder="Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>"
+                  className="text-sm font-mono w-full"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Aparece como remetente do e-mail de lembrete enviado à paciente. Padrão:{' '}
+                  <code>
+                    Ficha Digital - Andresa Souza Clinic &lt;ficha@andresasouza.com.br&gt;
+                  </code>
+                  .
+                </p>
+              </div>
 
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="reminderMinAdvance"
-                    className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
-                  >
-                    <Clock className="w-3.5 h-3.5 text-slate-500" />
-                    Antecedência mínima *
-                  </Label>
-                  <Select
-                    value={reminderMinAdvanceHours}
-                    onValueChange={(val: '6' | '12' | '24') => setReminderMinAdvanceHours(val)}
-                  >
-                    <SelectTrigger id="reminderMinAdvance" className="text-sm">
-                      <SelectValue placeholder="Selecione a antecedência" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="6">6 horas antes</SelectItem>
-                      <SelectItem value="12">12 horas antes</SelectItem>
-                      <SelectItem value="24">24 horas antes</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground">
-                    Tempo mínimo antes do procedimento para considerar o lembrete elegível.
-                  </p>
-                </div>
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="reminderMinAdvance"
+                  className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+                >
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  Antecedência mínima *
+                </Label>
+                <Select
+                  value={reminderMinAdvanceHours}
+                  onValueChange={(val: '6' | '12' | '24') => setReminderMinAdvanceHours(val)}
+                >
+                  <SelectTrigger id="reminderMinAdvance" className="text-sm w-full sm:w-64">
+                    <SelectValue placeholder="Selecione a antecedência" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">6 horas antes</SelectItem>
+                    <SelectItem value="12">12 horas antes</SelectItem>
+                    <SelectItem value="24">24 horas antes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Tempo mínimo antes do procedimento para considerar o lembrete elegível.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
