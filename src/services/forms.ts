@@ -380,8 +380,8 @@ export const clinicSettingsService = {
   },
 
   async updateSettings(data: {
-    clinic_name: string
-    notification_email: string
+    clinic_name?: string
+    notification_email?: string
     phone?: string
     sender_email?: string
     technical_responsible?: string
@@ -403,7 +403,12 @@ export const clinicSettingsService = {
       const updated = await pb.collection('clinic_settings').update(existing.id, data)
       return updated as unknown as ClinicSettingsRecord
     } else {
-      const created = await pb.collection('clinic_settings').create(data)
+      const defaultData = {
+        clinic_name: data.clinic_name || 'Andresa Souza Clinic',
+        notification_email: data.notification_email || 'gihobaicn@hotmail.com',
+        ...data,
+      }
+      const created = await pb.collection('clinic_settings').create(defaultData)
       return created as unknown as ClinicSettingsRecord
     }
   },
