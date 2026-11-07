@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, KeyRound, Loader2, MailCheck } from 'lucide-react'
+import { authService } from '@/services/auth'
 
 /**
  * "Esqueci minha senha": pede o e-mail e envia um link de redefinição com
@@ -22,17 +23,9 @@ export default function ForgotPasswordPage() {
     setError(null)
     setLoading(true)
     try {
-      const resetUrlBase = `${window.location.origin}/redefinir-senha`
-      const res = await fetch('/backend/v1/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), reset_url_base: resetUrlBase }),
-      })
-      if (!res.ok) {
-        setError('Não foi possível enviar o link. Tente novamente em instantes.')
-      } else {
-        setSent(true)
-      }
+      // Via cliente do PocketBase (respeita o baseURL do backend)
+      await authService.forgotPassword(email.trim().toLowerCase())
+      setSent(true)
     } catch (_) {
       setError('Não foi possível enviar o link. Tente novamente em instantes.')
     } finally {

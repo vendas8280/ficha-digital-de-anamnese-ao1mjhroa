@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { authStatus } from '@/services/auth'
+import { authService } from '@/services/auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,9 +28,10 @@ export default function LoginPage() {
   // Descobre se o painel ainda não tem administrador (primeiro acesso).
   useEffect(() => {
     let active = true
-    authStatus()
-      .then((s) => {
-        if (active && s && s.setup_required) setSetupRequired(true)
+    authService
+      .getSetupStatus()
+      .then((setupRequired) => {
+        if (active && setupRequired) setSetupRequired(true)
       })
       .catch(() => {})
     return () => {

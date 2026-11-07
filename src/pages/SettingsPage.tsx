@@ -31,6 +31,7 @@ import {
   FlaskConical,
   Send,
 } from 'lucide-react'
+import { AccessLogsCard } from '@/components/AccessLogsCard'
 
 export default function SettingsPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
@@ -596,6 +597,8 @@ export default function SettingsPage() {
             </form>
           </CardContent>
         </Card>
+
+        <AccessLogsCard />
       </main>
     </div>
   )

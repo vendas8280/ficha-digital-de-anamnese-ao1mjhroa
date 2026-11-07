@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, KeyRound, Loader2, MailCheck } from 'lucide-react'
+import { authService } from '@/services/auth'
 
 const GENERIC = 'Link inválido ou expirado. Solicite um novo.'
 
@@ -34,20 +35,13 @@ export default function ResetPasswordPage() {
 
     setLoading(true)
     try {
-      const res = await fetch('/backend/v1/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(data?.message || GENERIC)
-        return
-      }
+      // Via cliente do PocketBase (respeita o baseURL do backend)
+      await authService.resetPassword(token, password)
       setDone(true)
       setTimeout(() => navigate('/login', { replace: true }), 3000)
-    } catch (_) {
-      setError(GENERIC)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setError(msg || GENERIC)
     } finally {
       setLoading(false)
     }
