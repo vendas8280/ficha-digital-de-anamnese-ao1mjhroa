@@ -78,7 +78,7 @@ function EventLabel({ event }: { event: string }) {
  * de cada login do administrador, do acesso mais recente para o mais antigo.
  * Os registros vêm da rota autenticada /backend/v1/auth/access-logs.
  */
-export default function AccessLogsCard() {
+export function AccessLogsCard() {
   const [logs, setLogs] = useState<AuthAccessLogItem[] | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -158,3 +158,5 @@ export default function AccessLogsCard() {
     </Card>
   )
 }
+
+export default AccessLogsCard

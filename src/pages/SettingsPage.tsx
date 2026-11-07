@@ -30,11 +30,12 @@ import {
   Clock,
   FlaskConical,
   Send,
+  LogOut,
 } from 'lucide-react'
 import { AccessLogsCard } from '@/components/AccessLogsCard'
 
 export default function SettingsPage() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, signOut } = useAuth()
   const navigate = useNavigate()
   const { toast } = useToast()
 
@@ -246,6 +247,21 @@ export default function SettingsPage() {
                 Remetente Oficial, Dados Legais e Notificações
               </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await signOut()
+                navigate('/login')
+              }}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
           </div>
         </div>
       </header>
