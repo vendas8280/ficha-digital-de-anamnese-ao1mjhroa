@@ -94,35 +94,88 @@ export type PatientCardCategory = 'com_pendencia' | 'fichas_prontas' | 'aguardan
 export type PeriodFilter = '7d' | '30d' | 'ano' | 'todos'
 
 /**
+ * Estados do lembrete considerados como falha ou não envio que exigem ação / pendência.
+ * Cobre:
+ * - Lembrete com falha de envio ('falha no envio', 'falha')
+ * - Lembrete não enviado por atraso ('não enviado por atraso', 'fora do prazo',
+ *   'sem ficha, lembrete não enviado', 'sem ficha, não enviado')
+ */
+export const REMINDER_PENDING_STATES = new Set([
+  'falha no envio',
+  'falha',
+  'não enviado por atraso',
+  'fora do prazo',
+  'sem ficha, lembrete não enviado',
+  'sem ficha, não enviado',
+])
+
+/**
+ * Avalia se o procedimento está agendado para menos de 24h a partir do momento de referência (now).
+ */
+export function isAppointmentWithin24Hours(
+  appointment?: ProcedureAppointmentRecord,
+  now: Date = new Date(),
+): boolean {
+  if (!appointment?.procedure_date) return false
+  const dateStr = appointment.procedure_date.trim()
+  const timeStr = (appointment.procedure_time || '00:00').trim()
+  const apptDateTime = new Date(`${dateStr}T${timeStr.length === 5 ? `${timeStr}:00` : timeStr}`)
+  if (isNaN(apptDateTime.getTime())) return false
+
+  const diffMs = apptDateTime.getTime() - now.getTime()
+  // No futuro e em menos de 24h (ou já passado em até 12h sem assinatura)
+  return diffMs <= 24 * 60 * 60 * 1000
+}
+
+/**
  * Classifica a ficha em EXATAMENTE UM dos três cartões novos,
  * com prioridade estrita:
- * 1. "Com pendência" (vermelho #C0392B): falha no comprovante OU lembrete com falha no envio
- * 2. "Fichas prontas" (verde #2E9E5B): termo assinado (status === 'preenchida') E comprovante entregue (email_delivery_status === 'enviado')
- * 3. "Aguardando a paciente" (âmbar #D99A00): link gerado, ficha ainda não assinada
+ * 1. "Com pendência" (vermelho #C0392B):
+ *    - lembrete com falha de envio
+ *    - lembrete não enviado por atraso
+ *    - comprovante não entregue (quando a ficha foi assinada e comprovante está em falha ou não enviado)
+ *    - ficha gerada e ainda não assinada com procedimento em menos de 24h
+ * 2. "Fichas prontas" (verde #2E9E5B):
+ *    - termo assinado (status === 'preenchida') E comprovante entregue (email_delivery_status === 'enviado')
+ *    - lembrete não está em falha/atraso
+ * 3. "Aguardando a paciente" (âmbar #D99A00):
+ *    - link gerado, ficha ainda não assinada (e procedimento em > 24h ou sem agendamento urgente)
  */
 export function classifyFormCategory(
   form: FormSubmissionRecord,
   appointment?: ProcedureAppointmentRecord,
+  now: Date = new Date(),
 ): PatientCardCategory {
-  // 1. Prioridade 1: Com pendência
+  const isSigned = form.status === 'preenchida'
   const rawProofStatus = String(form.email_delivery_status || '').toLowerCase()
-  const hasProofFailure = rawProofStatus === 'falha'
-
   const remState = (appointment?.reminder_state || '').trim().toLowerCase()
-  const hasReminderFailure = remState === 'falha no envio' || remState === 'falha'
 
-  if (hasProofFailure || hasReminderFailure) {
+  // Regra 1: Lembrete com falha ou não enviado por atraso
+  const hasReminderIssue = REMINDER_PENDING_STATES.has(remState)
+
+  // Regra 2: Comprovante não entregue quando a ficha já foi assinada
+  // (se foi assinada e o comprovante falhou OU não foi enviado)
+  const hasProofIssue =
+    isSigned &&
+    (rawProofStatus === 'falha' ||
+      rawProofStatus === 'nao_enviado' ||
+      rawProofStatus === '' ||
+      rawProofStatus === 'pendente')
+
+  // Regra 3: Ficha gerada e ainda não assinada com procedimento em menos de 24h
+  const isUrgentUnsigned = !isSigned && isAppointmentWithin24Hours(appointment, now)
+
+  // Se algum caso de pendência estiver presente:
+  if (hasReminderIssue || hasProofIssue || isUrgentUnsigned) {
     return 'com_pendencia'
   }
 
-  // 2. Prioridade 2: Fichas prontas
-  // termo assinado e comprovante entregue
-  if (form.status === 'preenchida' && rawProofStatus === 'enviado') {
+  // 2. Fichas prontas: termo assinado E comprovante entregue
+  if (isSigned && rawProofStatus === 'enviado') {
     return 'fichas_prontas'
   }
 
-  // 3. Prioridade 3: Aguardando a paciente
-  // link gerado, ficha ainda não assinada
+  // 3. Aguardando a paciente: link gerado, ficha ainda não assinada
   return 'aguardando_paciente'
 }
 
@@ -477,6 +530,19 @@ export default function DashboardPage() {
       {/* Top Navigation */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+=======
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
               <Sparkles className="w-5 h-5 text-purple-200" />
@@ -490,6 +556,19 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
+=======
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
             {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
             <Button
               asChild
@@ -539,10 +618,10 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* 1. Três Cartões de Estado Único (mutuamente exclusivos) */}
-        <div className="space-y-2">
+      {/* Main Content Area - pb-28 sm:pb-8 garante espaço extra no rodapé do mobile (safe-area + margem) para nunca cobrir a última linha com banner */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28 sm:pb-8 space-y-6">
+        {/* 1. Três Cartões de Estado Único no COMPUTADOR (>= 768px) - Clicáveis e mutuamente exclusivos */}
+        <div className="hidden md:block space-y-2">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Card 1: Aguardando a paciente (âmbar #D99A00) - Clicável por inteiro */}
             <Card
@@ -796,6 +875,97 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* 1. Três Cartões de Resumo COMPACTOS no CELULAR (< 768px): numa linha compacta entre o cabeçalho e a busca */}
+        <div className="md:hidden">
+          <div className="grid grid-cols-3 gap-2">
+            {/* Cartão Mobile 1: Aguardando */}
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryFilter((prev) =>
+                  prev === 'aguardando_paciente' ? null : 'aguardando_paciente',
+                )
+              }}
+              className={`rounded-xl p-2.5 text-center border transition-all select-none active:scale-[0.98] ${
+                categoryFilter === 'aguardando_paciente'
+                  ? 'bg-amber-50 border-[#D99A00] ring-2 ring-[#D99A00]/30 shadow-xs'
+                  : 'bg-white border-slate-200 shadow-2xs hover:border-amber-300'
+              }`}
+            >
+              <div className="text-[11px] font-semibold text-[#D99A00] truncate leading-tight">
+                Aguardando
+              </div>
+              <div className="text-2xl font-black text-[#D99A00] mt-0.5 leading-none">
+                {categoryCounts.aguardando}
+              </div>
+            </button>
+
+            {/* Cartão Mobile 2: Prontas */}
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryFilter((prev) => (prev === 'fichas_prontas' ? null : 'fichas_prontas'))
+              }}
+              className={`rounded-xl p-2.5 text-center border transition-all select-none active:scale-[0.98] ${
+                categoryFilter === 'fichas_prontas'
+                  ? 'bg-emerald-50 border-[#2E9E5B] ring-2 ring-[#2E9E5B]/30 shadow-xs'
+                  : 'bg-white border-slate-200 shadow-2xs hover:border-emerald-300'
+              }`}
+            >
+              <div className="text-[11px] font-semibold text-[#2E9E5B] truncate leading-tight">
+                Prontas
+              </div>
+              <div className="text-2xl font-black text-[#2E9E5B] mt-0.5 leading-none">
+                {categoryCounts.prontas}
+              </div>
+            </button>
+
+            {/* Cartão Mobile 3: Pendência */}
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryFilter((prev) => (prev === 'com_pendencia' ? null : 'com_pendencia'))
+              }}
+              className={`rounded-xl p-2.5 text-center border transition-all select-none active:scale-[0.98] ${
+                categoryFilter === 'com_pendencia'
+                  ? 'bg-red-50 border-[#C0392B] ring-2 ring-[#C0392B]/30 shadow-xs'
+                  : 'bg-white border-slate-200 shadow-2xs hover:border-red-300'
+              }`}
+            >
+              <div className="text-[11px] font-semibold text-[#C0392B] truncate leading-tight">
+                Pendência
+              </div>
+              <div className="text-2xl font-black text-[#C0392B] mt-0.5 leading-none">
+                {categoryCounts.pendencia}
+              </div>
+            </button>
+          </div>
+
+          {/* Indicador de filtro ativo no mobile para limpar com 1 toque */}
+          {categoryFilter && (
+            <div className="flex items-center justify-between mt-1.5 px-1">
+              <span className="text-[11px] text-slate-500 font-medium">
+                Filtrando:{' '}
+                {categoryFilter === 'aguardando_paciente'
+                  ? 'Aguardando'
+                  : categoryFilter === 'fichas_prontas'
+                    ? 'Prontas'
+                    : 'Pendência'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter(null)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 underline flex items-center gap-1"
+              >
+                <FilterX className="w-3 h-3" />
+                Limpar filtro
+              </button>
+            </div>
+          )}
+        </div>
+
+
+=======
         {/* Actions Bar & Cabeçalho */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 sm:p-5 rounded-[12px] shadow-sm border border-slate-200/90">
           <div>
@@ -1083,6 +1253,94 @@ export default function DashboardPage() {
               </DialogContent>
             </Dialog>
           </div>
+        </div>
+
+        {/* Três Cartões de Resumo COMPACTOS no CELULAR (< 768px): linha compacta entre o título e a busca */}
+        <div className="md:hidden">
+          <div className="grid grid-cols-3 gap-2">
+            {/* Cartão Mobile 1: Aguardando */}
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryFilter((prev) =>
+                  prev === 'aguardando_paciente' ? null : 'aguardando_paciente',
+                )
+              }}
+              className={`rounded-xl p-2.5 text-center border transition-all select-none active:scale-[0.98] ${
+                categoryFilter === 'aguardando_paciente'
+                  ? 'bg-amber-50 border-[#D99A00] ring-2 ring-[#D99A00]/30 shadow-xs'
+                  : 'bg-white border-slate-200 shadow-2xs hover:border-amber-300'
+              }`}
+            >
+              <div className="text-[11px] font-semibold text-[#D99A00] truncate leading-tight">
+                Aguardando
+              </div>
+              <div className="text-2xl font-black text-[#D99A00] mt-0.5 leading-none">
+                {categoryCounts.aguardando}
+              </div>
+            </button>
+
+            {/* Cartão Mobile 2: Prontas */}
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryFilter((prev) =>
+                  prev === 'fichas_prontas' ? null : 'fichas_prontas',
+                )
+              }}
+              className={`rounded-xl p-2.5 text-center border transition-all select-none active:scale-[0.98] ${
+                categoryFilter === 'fichas_prontas'
+                  ? 'bg-emerald-50 border-[#2E9E5B] ring-2 ring-[#2E9E5B]/30 shadow-xs'
+                  : 'bg-white border-slate-200 shadow-2xs hover:border-emerald-300'
+              }`}
+            >
+              <div className="text-[11px] font-semibold text-[#2E9E5B] truncate leading-tight">
+                Prontas
+              </div>
+              <div className="text-2xl font-black text-[#2E9E5B] mt-0.5 leading-none">
+                {categoryCounts.prontas}
+              </div>
+            </button>
+
+            {/* Cartão Mobile 3: Pendência */}
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryFilter((prev) =>
+                  prev === 'com_pendencia' ? null : 'com_pendencia',
+                )
+              }}
+              className={`rounded-xl p-2.5 text-center border transition-all select-none active:scale-[0.98] ${
+                categoryFilter === 'com_pendencia'
+                  ? 'bg-red-50 border-[#C0392B] ring-2 ring-[#C0392B]/30 shadow-xs'
+                  : 'bg-white border-slate-200 shadow-2xs hover:border-red-300'
+              }`}
+            >
+              <div className="text-[11px] font-semibold text-[#C0392B] truncate leading-tight">
+                Pendência
+              </div>
+              <div className="text-2xl font-black text-[#C0392B] mt-0.5 leading-none">
+                {categoryCounts.pendencia}
+              </div>
+            </button>
+          </div>
+
+          {/* Indicador de filtro ativo no mobile para limpar com 1 toque */}
+          {categoryFilter && (
+            <div className="flex items-center justify-between mt-1.5 px-1">
+              <span className="text-[11px] text-slate-500 font-medium">
+                Filtrando: {categoryFilter === 'aguardando_paciente' ? 'Aguardando' : categoryFilter === 'fichas_prontas' ? 'Prontas' : 'Pendência'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter(null)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 underline flex items-center gap-1"
+              >
+                <FilterX className="w-3 h-3" />
+                Limpar filtro
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 4. Filtros: Busca, Procedimento e Filtro de Período (Padrão: Últimos 30 dias) */}
@@ -1427,24 +1685,32 @@ export default function DashboardPage() {
                                   </DropdownMenuItem>
                                 )}
 
-                                {/* Reenviar comprovante (SÓ aparece quando há falha no comprovante) */}
-                                {hasProofFailure && (
+                                {/* Reenviar comprovante (habilitado se assinado; destaque se houver falha) */}
+                                {isSigned && (
                                   <DropdownMenuItem
                                     onClick={() => handleResendEmail(item.id)}
                                     disabled={resendingId === item.id}
-                                    className="flex items-center gap-2 text-[#C0392B] focus:text-[#C0392B] cursor-pointer"
+                                    className={`flex items-center gap-2 cursor-pointer ${
+                                      hasProofFailure
+                                        ? 'text-[#C0392B] focus:text-[#C0392B]'
+                                        : 'text-slate-700'
+                                    }`}
                                   >
                                     <Send className="w-3.5 h-3.5" />
                                     <span>Reenviar comprovante</span>
                                   </DropdownMenuItem>
                                 )}
 
-                                {/* Reenviar lembrete (SÓ aparece quando há falha no envio do lembrete) */}
-                                {hasReminderFailure && itemAppointment && (
+                                {/* Reenviar lembrete (disponível quando há agendamento vinculado) */}
+                                {itemAppointment && (
                                   <DropdownMenuItem
                                     onClick={() => handleRetryReminder(itemAppointment.id)}
                                     disabled={retryingReminderId === itemAppointment.id}
-                                    className="flex items-center gap-2 text-[#C0392B] focus:text-[#C0392B] cursor-pointer"
+                                    className={`flex items-center gap-2 cursor-pointer ${
+                                      hasReminderFailure
+                                        ? 'text-[#C0392B] focus:text-[#C0392B]'
+                                        : 'text-slate-700'
+                                    }`}
                                   >
                                     <RefreshCw className="w-3.5 h-3.5" />
                                     <span>Reenviar lembrete</span>
@@ -1489,6 +1755,7 @@ export default function DashboardPage() {
               const linkUrl = `${window.location.origin}/f/${item.token}`
               const isCopied = copiedId === item.id
               const itemAppointment = appointmentsByFormId.get(item.id)
+              const isSigned = item.status === 'preenchida'
               const remState = (itemAppointment?.reminder_state || '').trim().toLowerCase()
               const hasReminderFailure = remState === 'falha no envio' || remState === 'falha'
               const hasProofFailure = item.email_delivery_status === 'falha'
@@ -1551,8 +1818,8 @@ export default function DashboardPage() {
                       </button>
                     )}
 
-                    {/* Reenviar comprovante se falha */}
-                    {hasProofFailure && (
+                    {/* Reenviar comprovante (disponível quando a ficha foi assinada) */}
+                    {isSigned && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1560,7 +1827,9 @@ export default function DashboardPage() {
                           setDrawerActionForm(null)
                         }}
                         disabled={resendingId === item.id}
-                        className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-[#C0392B] hover:bg-red-50 active:bg-red-100 transition-colors text-left w-full"
+                        className={`flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm hover:bg-slate-50 active:bg-slate-100 transition-colors text-left w-full ${
+                          hasProofFailure ? 'text-[#C0392B] font-semibold' : 'text-slate-800'
+                        }`}
                       >
                         {resendingId === item.id ? (
                           <Loader2 className="w-5 h-5 animate-spin shrink-0" />
@@ -1571,8 +1840,8 @@ export default function DashboardPage() {
                       </button>
                     )}
 
-                    {/* Reenviar lembrete se falha */}
-                    {hasReminderFailure && itemAppointment && (
+                    {/* Reenviar lembrete (disponível quando há agendamento vinculado) */}
+                    {itemAppointment && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1580,7 +1849,9 @@ export default function DashboardPage() {
                           setDrawerActionForm(null)
                         }}
                         disabled={retryingReminderId === itemAppointment.id}
-                        className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-[#C0392B] hover:bg-red-50 active:bg-red-100 transition-colors text-left w-full"
+                        className={`flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm hover:bg-slate-50 active:bg-slate-100 transition-colors text-left w-full ${
+                          hasReminderFailure ? 'text-[#C0392B] font-semibold' : 'text-slate-800'
+                        }`}
                       >
                         {retryingReminderId === itemAppointment.id ? (
                           <Loader2 className="w-5 h-5 animate-spin shrink-0" />
