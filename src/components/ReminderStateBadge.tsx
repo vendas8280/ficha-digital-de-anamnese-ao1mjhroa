@@ -1,12 +1,12 @@
 import * as React from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Sheet, SheetContent, SheetClose } from '@/components/ui/sheet'
 import {
   AlertTriangle,
   BellRing,
   Calendar,
   CalendarClock,
-  CheckCircle2,
   Clock,
   MailCheck,
   RefreshCw,
@@ -29,12 +29,12 @@ const STATE_META: Record<string, { label: string; className: string; icon: React
     icon: <BellRing className="w-3 h-3 mr-1" />,
   },
   'parcial: apenas 2h': {
-    label: 'Parcial: apenas 2h',
+    label: 'Só lembrete de 2h',
     className: 'bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100',
     icon: <CalendarClock className="w-3 h-3 mr-1" />,
   },
   'fora do prazo': {
-    label: 'Fora do prazo',
+    label: 'Não enviado',
     className: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
     icon: <AlertTriangle className="w-3 h-3 mr-1" />,
   },
@@ -54,17 +54,17 @@ const STATE_META: Record<string, { label: string; className: string; icon: React
     icon: <AlertTriangle className="w-3 h-3 mr-1" />,
   },
   'não enviado por atraso': {
-    label: 'Não enviado por atraso',
+    label: 'Não enviado',
     className: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
     icon: <Clock className="w-3 h-3 mr-1" />,
   },
   'sem ficha, lembrete não enviado': {
-    label: 'Sem ficha, não enviado',
+    label: 'Não enviado',
     className: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
     icon: <UserX className="w-3 h-3 mr-1" />,
   },
   'sem ficha, não enviado': {
-    label: 'Sem ficha, não enviado',
+    label: 'Não enviado',
     className: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
     icon: <UserX className="w-3 h-3 mr-1" />,
   },
@@ -351,131 +351,283 @@ export function ReminderStateBadge({
   const isNegativeState = NEGATIVE_STATES.has(normalizedState)
   const emailToShow = actualSentTo || destinationEmail || ''
 
+  const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false)
+
   return (
-    <TooltipProvider delayDuration={150}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="inline-flex items-center gap-1.5 cursor-pointer flex-wrap">
-            <Badge
-              className={`${meta.className} font-medium text-[10px] gap-0.5 shadow-none transition-opacity hover:opacity-90 whitespace-nowrap`}
+    <>
+      {/* 1. Computador (>= 768px): Balão flutuante (Tooltip) inalterado no hover */}
+      <div className="hidden md:inline-flex items-center">
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="inline-flex items-center gap-1.5 cursor-pointer flex-wrap">
+                <Badge
+                  className={`${meta.className} font-medium text-[10px] gap-0.5 shadow-none transition-opacity hover:opacity-90 whitespace-nowrap`}
+                >
+                  {meta.icon}
+                  {meta.label}
+                </Badge>
+
+                {emailMismatch && (
+                  <Badge className="bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-50 font-medium text-[10px] gap-0.5 whitespace-nowrap">
+                    <AlertTriangle className="w-3 h-3 text-amber-600" />
+                    Conferir e-mail
+                  </Badge>
+                )}
+
+                {(normalizedState === 'falha no envio' || normalizedState === 'falha') &&
+                  onRetry && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isRetrying}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onRetry(appointment.id)
+                      }}
+                      className="h-5 px-1.5 text-[10px] text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
+                      title="Tentar reenviar lembrete via Resend"
+                    >
+                      <RefreshCw className={`w-2.5 h-2.5 ${isRetrying ? 'animate-spin' : ''}`} />
+                      Reenviar
+                    </Button>
+                  )}
+              </div>
+            </TooltipTrigger>
+
+            <TooltipContent
+              side="top"
+              align="start"
+              className="bg-slate-900 text-slate-100 border-slate-800 p-2.5 text-xs max-w-xs shadow-xl space-y-1.5"
             >
-              {meta.icon}
-              {meta.label}
-            </Badge>
-
-            {emailMismatch && (
-              <Badge className="bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-50 font-medium text-[10px] gap-0.5 whitespace-nowrap">
-                <AlertTriangle className="w-3 h-3 text-amber-600" />
-                Conferir e-mail
-              </Badge>
-            )}
-
-            {(normalizedState === 'falha no envio' || normalizedState === 'falha') && onRetry && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isRetrying}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRetry(appointment.id)
-                }}
-                className="h-5 px-1.5 text-[10px] text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
-                title="Tentar reenviar lembrete via Resend"
-              >
-                <RefreshCw className={`w-2.5 h-2.5 ${isRetrying ? 'animate-spin' : ''}`} />
-                Reenviar
-              </Button>
-            )}
-          </div>
-        </TooltipTrigger>
-
-        <TooltipContent
-          side="top"
-          align="start"
-          className="bg-slate-900 text-slate-100 border-slate-800 p-2.5 text-xs max-w-xs shadow-xl space-y-1.5"
-        >
-          <div className="font-semibold text-slate-200 border-b border-slate-800 pb-1 flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-rose-400" />
-            <span>Detalhes do Agendamento & Lembretes</span>
-          </div>
-
-          <div className="space-y-1 text-[11px]">
-            {/* Linha 1: Procedimento: [dd/mm/aaaa] às [hh:mm] */}
-            {procedureFormatted && (
-              <div className="text-slate-200">
-                <span className="text-slate-400">Procedimento: </span>
-                <span className="font-medium text-slate-200">{procedureFormatted}</span>
+              <div className="font-semibold text-slate-200 border-b border-slate-800 pb-1 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-rose-400" />
+                <span>Detalhes do Agendamento & Lembretes</span>
               </div>
-            )}
 
-            {/* Linha 2: Ficha assinada: [dd/mm/aaaa] às [hh:mm] (se assinada) */}
-            {signedFormatted && (
-              <div className="text-slate-200">
-                <span className="text-slate-400">Ficha assinada: </span>
-                <span className="font-medium text-slate-200">{signedFormatted}</span>
-              </div>
-            )}
+              <div className="space-y-1 text-[11px]">
+                {procedureFormatted && (
+                  <div className="text-slate-200">
+                    <span className="text-slate-400">Procedimento: </span>
+                    <span className="font-medium text-slate-200">{procedureFormatted}</span>
+                  </div>
+                )}
 
-            {/* Linha 3: Lembrete 2h: [enviado em ... | previsto ... | nenhum] */}
-            <div className="text-slate-200">
-              <span className="text-slate-400">Lembrete 2h: </span>
-              <span
-                className={`font-medium ${
-                  line2h.includes('enviado em')
-                    ? 'text-emerald-400'
-                    : line2h.includes('previsto')
-                      ? 'text-amber-300'
-                      : 'text-slate-400'
-                }`}
-              >
-                {line2h.replace(/^Lembrete 2h:\s*/, '')}
-              </span>
-            </div>
+                {signedFormatted && (
+                  <div className="text-slate-200">
+                    <span className="text-slate-400">Ficha assinada: </span>
+                    <span className="font-medium text-slate-200">{signedFormatted}</span>
+                  </div>
+                )}
 
-            {/* Linha 4: Lembrete 24h: [enviado em ... | previsto ... | nenhum] */}
-            <div className="text-slate-200">
-              <span className="text-slate-400">Lembrete 24h: </span>
-              <span
-                className={`font-medium ${
-                  line24h.includes('enviado em')
-                    ? 'text-emerald-400'
-                    : line24h.includes('previsto')
-                      ? 'text-blue-300'
-                      : 'text-slate-400'
-                }`}
-              >
-                {line24h.replace(/^Lembrete 24h:\s*/, '')}
-              </span>
-            </div>
-
-            {/* Linha 5: Enviado para: [e-mail] OU Nenhum lembrete enviado */}
-            <div className="pt-0.5 border-t border-slate-800 text-slate-200">
-              {isNegativeState ? (
-                <span className="font-medium text-slate-400 italic">Nenhum lembrete enviado</span>
-              ) : (
-                <>
-                  <span className="text-slate-400">Enviado para: </span>
+                <div className="text-slate-200">
+                  <span className="text-slate-400">Lembrete 2h: </span>
                   <span
-                    className={`font-medium break-all ${
-                      emailToShow ? 'text-slate-200' : 'text-amber-400 italic'
+                    className={`font-medium ${
+                      line2h.includes('enviado em')
+                        ? 'text-emerald-400'
+                        : line2h.includes('previsto')
+                          ? 'text-amber-300'
+                          : 'text-slate-400'
                     }`}
                   >
-                    {emailToShow || 'sem e-mail'}
+                    {line2h.replace(/^Lembrete 2h:\s*/, '')}
                   </span>
-                </>
+                </div>
+
+                <div className="text-slate-200">
+                  <span className="text-slate-400">Lembrete 24h: </span>
+                  <span
+                    className={`font-medium ${
+                      line24h.includes('enviado em')
+                        ? 'text-emerald-400'
+                        : line24h.includes('previsto')
+                          ? 'text-blue-300'
+                          : 'text-slate-400'
+                    }`}
+                  >
+                    {line24h.replace(/^Lembrete 24h:\s*/, '')}
+                  </span>
+                </div>
+
+                <div className="pt-0.5 border-t border-slate-800 text-slate-200">
+                  {isNegativeState ? (
+                    <span className="font-medium text-slate-400 italic">
+                      Nenhum lembrete enviado
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-slate-400">Enviado para: </span>
+                      <span
+                        className={`font-medium break-all ${
+                          emailToShow ? 'text-slate-200' : 'text-amber-400 italic'
+                        }`}
+                      >
+                        {emailToShow || 'sem e-mail'}
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {emailMismatch && (
+                  <div className="pt-1 text-[10px] text-amber-300 border-t border-slate-800/80">
+                    Atenção: e-mail do agendamento ({apptEmail}) difere do e-mail da ficha (
+                    {cleanFormEmail}).
+                  </div>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+
+      {/* 2. Celular (< 768px): Toque abre folha (bottom sheet) subindo da base, ocupando até 60% */}
+      <div className="md:hidden inline-flex items-center gap-1.5 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setMobileSheetOpen(true)}
+          className="inline-flex items-center min-h-[44px] cursor-pointer text-left focus:outline-none"
+          aria-label="Ver detalhes do lembrete"
+        >
+          <Badge
+            className={`${meta.className} font-medium text-xs gap-1 shadow-none transition-opacity hover:opacity-90 whitespace-nowrap py-1 px-2.5`}
+          >
+            {meta.icon}
+            {meta.label}
+          </Badge>
+        </button>
+
+        {emailMismatch && (
+          <Badge className="bg-amber-50 text-amber-900 border-amber-300 font-medium text-[11px] gap-0.5 whitespace-nowrap py-1 px-2">
+            <AlertTriangle className="w-3 h-3 text-amber-600" />
+            Conferir e-mail
+          </Badge>
+        )}
+
+        {(normalizedState === 'falha no envio' || normalizedState === 'falha') && onRetry && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isRetrying}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRetry(appointment.id)
+            }}
+            className="min-h-[44px] px-2 text-xs text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
+            title="Tentar reenviar lembrete via Resend"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRetrying ? 'animate-spin' : ''}`} />
+            Reenviar
+          </Button>
+        )}
+
+        <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+          <SheetContent
+            side="bottom"
+            className="max-h-[60vh] rounded-t-[20px] rounded-b-none p-5 flex flex-col overflow-y-auto bg-white border-t border-slate-200 z-50 shadow-2xl"
+          >
+            {/* Alça de arrastar no topo */}
+            <div className="mx-auto w-12 h-1.5 rounded-full bg-slate-300 -mt-1 mb-3 shrink-0" />
+
+            {/* Título com ícone */}
+            <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100 pr-8">
+              <Calendar className="w-4 h-4 text-[#6B3FA0] shrink-0" />
+              <h3 className="text-sm font-bold text-slate-900 leading-snug">
+                Detalhes do Agendamento & Lembretes
+              </h3>
+            </div>
+
+            {/* Os cinco campos rotulados */}
+            <div className="space-y-2.5 text-xs">
+              {/* Campo 1: Procedimento */}
+              <div className="flex flex-col py-1 border-b border-slate-100">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Procedimento
+                </span>
+                <span className="font-medium text-slate-900 mt-0.5 text-xs">
+                  {procedureFormatted || 'Não informado'}
+                </span>
+              </div>
+
+              {/* Campo 2: Ficha assinada */}
+              <div className="flex flex-col py-1 border-b border-slate-100">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Ficha assinada
+                </span>
+                <span className="font-medium text-slate-900 mt-0.5 text-xs">
+                  {signedFormatted || 'Não assinada'}
+                </span>
+              </div>
+
+              {/* Campo 3: Lembrete 2h */}
+              <div className="flex flex-col py-1 border-b border-slate-100">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Lembrete 2h
+                </span>
+                <span
+                  className={`font-medium mt-0.5 text-xs ${
+                    line2h.includes('enviado em')
+                      ? 'text-emerald-700'
+                      : line2h.includes('previsto')
+                        ? 'text-amber-700'
+                        : 'text-slate-600'
+                  }`}
+                >
+                  {line2h.replace(/^Lembrete 2h:\s*/, '')}
+                </span>
+              </div>
+
+              {/* Campo 4: Lembrete 24h */}
+              <div className="flex flex-col py-1 border-b border-slate-100">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Lembrete 24h
+                </span>
+                <span
+                  className={`font-medium mt-0.5 text-xs ${
+                    line24h.includes('enviado em')
+                      ? 'text-emerald-700'
+                      : line24h.includes('previsto')
+                        ? 'text-blue-700'
+                        : 'text-slate-600'
+                  }`}
+                >
+                  {line24h.replace(/^Lembrete 24h:\s*/, '')}
+                </span>
+              </div>
+
+              {/* Campo 5: Enviado para */}
+              <div className="flex flex-col py-1">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Enviado para
+                </span>
+                <span className="font-medium text-slate-900 mt-0.5 break-all text-xs">
+                  {isNegativeState ? (
+                    <span className="text-slate-500 italic">Nenhum lembrete enviado</span>
+                  ) : (
+                    emailToShow || <span className="text-amber-600 italic">sem e-mail</span>
+                  )}
+                </span>
+              </div>
+
+              {emailMismatch && (
+                <div className="p-2 bg-amber-50 rounded-lg text-[11px] text-amber-800 border border-amber-200">
+                  Atenção: e-mail do agendamento ({apptEmail}) difere do e-mail da ficha (
+                  {cleanFormEmail}).
+                </div>
               )}
             </div>
 
-            {/* Destaque "Conferir e-mail" mantido quando há divergência */}
-            {emailMismatch && (
-              <div className="pt-1 text-[10px] text-amber-300 border-t border-slate-800/80">
-                Atenção: e-mail do agendamento ({apptEmail}) difere do e-mail da ficha (
-                {cleanFormEmail}).
-              </div>
-            )}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+            {/* Botão roxo "Fechar" na base */}
+            <div className="mt-4 pt-2">
+              <SheetClose asChild>
+                <Button className="w-full min-h-[44px] bg-[#6B3FA0] hover:bg-[#583385] text-white font-medium text-xs">
+                  Fechar
+                </Button>
+              </SheetClose>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+    </>
   )
 }
