@@ -3,6 +3,7 @@ import {
   FormSubmissionRecord,
   ProcedureAppointmentRecord,
   ClinicSettingsRecord,
+  AuditEventRecord,
   clinicSettingsService,
 } from '@/services/forms'
 import { generateFormPdfBytes } from '@/lib/pdfBinary'

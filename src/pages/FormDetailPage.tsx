@@ -165,7 +165,16 @@ export default function FormDetailPage() {
             {form.status === 'preenchida' && (
               <>
                 <Button
-                  onClick={() => printFormPDF(form)}
+                  onClick={async () => {
+                    printFormPDF(form)
+                    try {
+                      await formsService.recordPdfExportAudit(form.id, 'impressao')
+                      const updatedEvents = await formsService.listAuditEvents(form.id)
+                      setAuditEvents(updatedEvents)
+                    } catch {
+                      /* não bloqueia a interface */
+                    }
+                  }}
                   size="sm"
                   className="text-xs h-9 px-3.5 bg-rose-900 hover:bg-rose-950 text-white rounded-md font-medium shadow-sm transition-colors gap-1.5"
                 >
@@ -444,6 +453,12 @@ export default function FormDetailPage() {
                 Nenhum evento registrado ainda na trilha de auditoria para esta ficha.
               </p>
             )}
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="italic">Registro de auditoria. Não pode ser alterado.</span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Imutabilidade com encadeamento SHA-256
+              </span>
+            </div>
           </CardContent>
         </Card>
 

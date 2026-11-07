@@ -98,6 +98,8 @@ export interface AuditEventRecord {
   step_number?: number
   ip_address?: string
   user_agent?: string
+  previous_hash?: string
+  chain_hash?: string
   metadata?: Record<string, unknown>
   timestamp: string
   created: string

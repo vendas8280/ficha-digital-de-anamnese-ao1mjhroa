@@ -558,21 +558,29 @@ routerAdd('POST', '/backend/v1/forms/audit-event', (e) => {
   }
 
   var token = body.token || ''
+  var formSubmissionId = body.form_submission_id || body.form_id || ''
   var eventType = body.event_type || ''
   var description = body.description || ''
   var stepNumber = body.step_number || 0
   var metadata = body.metadata || {}
 
-  if (!token || !eventType) {
-    return e.json(400, { success: false, message: 'Token e event_type sao obrigatorios.' })
+  if ((!token && !formSubmissionId) || !eventType) {
+    return e.json(400, {
+      success: false,
+      message: 'Identificador da ficha (token ou id) e event_type sao obrigatorios.',
+    })
   }
 
   var formRecord = null
   try {
-    var forms = $app.findRecordsByFilter('form_submissions', 'token = {:token}', '', 1, 0, {
-      token: token,
-    })
-    if (forms && forms.length > 0) formRecord = forms[0]
+    if (formSubmissionId) {
+      formRecord = $app.findRecordById('form_submissions', formSubmissionId)
+    } else if (token) {
+      var forms = $app.findRecordsByFilter('form_submissions', 'token = {:token}', '', 1, 0, {
+        token: token,
+      })
+      if (forms && forms.length > 0) formRecord = forms[0]
+    }
   } catch (_) {}
 
   if (!formRecord) {
