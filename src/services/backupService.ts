@@ -134,9 +134,10 @@ export const backupService = {
       /* intentionally ignored */
     }
 
-    // 3. Busca agendamentos associados para saber a data do procedimento exata
+    // 3. Busca agendamentos associados e trilhas de auditoria para cada ficha
     const formIds = forms.map((f) => f.id)
     const appointmentsByFormId = new Map<string, ProcedureAppointmentRecord>()
+    const auditEventsByFormId = new Map<string, AuditEventRecord[]>()
 
     try {
       // Busca agendamentos em lotes de 50
@@ -153,18 +154,38 @@ export const backupService = {
             appointmentsByFormId.set(appt.form_submission, appt)
           }
         }
+
+        const audits = await pb.collection('audit_events').getFullList<AuditEventRecord>({
+          filter: filterStr,
+          sort: 'created',
+        })
+        for (const a of audits) {
+          if (!auditEventsByFormId.has(a.form_submission)) {
+            auditEventsByFormId.set(a.form_submission, [])
+          }
+          auditEventsByFormId.get(a.form_submission)!.push(a)
+        }
       }
     } catch {
       /* intentionally ignored */
     }
 
-    // 4. Prepara entradas do ZIP e linhas do CSV
+    // 4. Prepara entradas do ZIP, manifesto e linhas do CSV
     const zipEntries: ZipFileEntry[] = []
     const csvRows: string[] = [
-      '\uFEFFpaciente,cpf,procedimento,data_procedimento,data_assinatura,hash_documento,arquivo_pdf',
+      '\uFEFFpaciente,cpf,procedimento,data_procedimento,data_assinatura,hash_documento,arquivo_pdf,pasta_ficha',
     ]
 
     const usedFileNames = new Set<string>()
+    const manifestItems: Array<{
+      paciente: string
+      cpf: string
+      procedimento: string
+      data_assinatura: string
+      hash_documento: string
+      pasta: string
+      arquivos: string[]
+    }> = []
 
     for (let i = 0; i < total; i++) {
       const form = forms[i]
@@ -173,7 +194,7 @@ export const backupService = {
       onProgress?.({
         current: currentNum,
         total,
-        message: `Gerando PDF ${currentNum} de ${total}: ${form.patient_name || 'Paciente'}...`,
+        message: `Processando ficha ${currentNum} de ${total}: ${form.patient_name || 'Paciente'}...`,
       })
 
       const appt = appointmentsByFormId.get(form.id)
@@ -182,25 +203,158 @@ export const backupService = {
       const patientSafeName = sanitizeFileNamePart(form.patient_name)
       const procSafeLabel = sanitizeFileNamePart(getProcedureLabel(form.form_type))
 
-      let pdfBaseName = `${dateYmd}_${patientSafeName}_${procSafeLabel}`
-      let pdfFileName = `${pdfBaseName}.pdf`
+      let folderBaseName = `${dateYmd}_${patientSafeName}_${procSafeLabel}`
+      let folderName = folderBaseName
       let counter = 2
-      while (usedFileNames.has(pdfFileName)) {
-        pdfFileName = `${pdfBaseName}_${counter}.pdf`
+      while (usedFileNames.has(folderName)) {
+        folderName = `${folderBaseName}_${counter}`
         counter++
       }
-      usedFileNames.add(pdfFileName)
+      usedFileNames.add(folderName)
 
-      // Gerar PDF binário
+      const pdfFileName = `${folderName}.pdf`
+      const pdfFilePath = `${folderName}/${pdfFileName}`
+
+      // 1. Gerar PDF binário
       const pdfBytes = generateFormPdfBytes(form, settings)
+      const formDate = form.signed_at ? new Date(form.signed_at) : new Date(form.created)
 
       zipEntries.push({
-        name: pdfFileName,
+        name: pdfFilePath,
         data: pdfBytes,
-        date: form.signed_at ? new Date(form.signed_at) : new Date(form.created),
+        date: formDate,
       })
 
-      // Linha CSV: paciente, CPF, procedimento, data do procedimento, data da assinatura, hash do documento e nome do arquivo PDF
+      // 2. Trilha de auditoria legível (.txt)
+      const audits = auditEventsByFormId.get(form.id) || []
+      const auditLines: string[] = [
+        '================================================================================',
+        'TRILHA DE AUDITORIA DIGITAL — ANDRESA SOUZA CLINIC',
+        '================================================================================',
+        `Paciente: ${form.patient_name || 'Não informado'}`,
+        `CPF: ${form.patient_cpf || 'Não informado'}`,
+        `Procedimento: ${getProcedureLabel(form.form_type)}`,
+        `Data e Hora da Assinatura: ${form.signed_at || 'Não assinada'}`,
+        `Hash SHA-256 do Documento: ${form.document_hash || 'SHA-256'}`,
+        `E-mail do Paciente: ${form.patient_email || 'Não informado'}`,
+        `Telefone: ${form.patient_phone || 'Não informado'}`,
+        `Status Atual: ${form.status}`,
+        '--------------------------------------------------------------------------------',
+        'REGISTROS CRONOLÓGICOS DE EVENTOS:',
+        '--------------------------------------------------------------------------------',
+      ]
+
+      if (audits.length === 0) {
+        auditLines.push('(Nenhum evento adicional registrado)')
+      } else {
+        audits.forEach((a, idx) => {
+          auditLines.push(`[${idx + 1}] Data/Hora: ${a.timestamp || a.created}`)
+          auditLines.push(`    Tipo: ${a.event_type} | Etapa: ${a.step_number || '-'}`)
+          auditLines.push(`    Descrição: ${a.description}`)
+          if (a.ip_address) auditLines.push(`    IP: ${a.ip_address}`)
+          if (a.user_agent) auditLines.push(`    Navegador/Dispositivo: ${a.user_agent}`)
+          if (a.previous_hash) auditLines.push(`    Hash Precedente: ${a.previous_hash}`)
+          if (a.chain_hash) auditLines.push(`    Hash do Elo (Chain Hash): ${a.chain_hash}`)
+          if (a.metadata && Object.keys(a.metadata).length > 0) {
+            auditLines.push(`    Metadados: ${JSON.stringify(a.metadata)}`)
+          }
+          auditLines.push('')
+        })
+      }
+      auditLines.push(
+        '================================================================================',
+      )
+      auditLines.push('Registro de auditoria. Não pode ser alterado.')
+      auditLines.push(
+        '================================================================================',
+      )
+
+      const auditTxtPath = `${folderName}/trilha-auditoria.txt`
+      zipEntries.push({
+        name: auditTxtPath,
+        data: auditLines.join('\r\n'),
+        date: formDate,
+      })
+
+      // 3. Trilha de auditoria estruturada (.json)
+      const auditJsonData = {
+        paciente: form.patient_name,
+        cpf: form.patient_cpf,
+        email: form.patient_email,
+        procedimento: getProcedureLabel(form.form_type),
+        data_assinatura: form.signed_at,
+        hash_documento: form.document_hash,
+        status: form.status,
+        eventos_auditoria: audits.map((a) => ({
+          id: a.id,
+          event_type: a.event_type,
+          description: a.description,
+          step_number: a.step_number,
+          ip_address: a.ip_address,
+          user_agent: a.user_agent,
+          metadata: a.metadata,
+          timestamp: a.timestamp,
+          previous_hash: a.previous_hash || null,
+          chain_hash: a.chain_hash || null,
+          created: a.created,
+        })),
+      }
+      const auditJsonPath = `${folderName}/trilha-auditoria.json`
+      zipEntries.push({
+        name: auditJsonPath,
+        data: JSON.stringify(auditJsonData, null, 2),
+        date: formDate,
+      })
+
+      // 4. Registro da assinatura e termo (.json)
+      const signatureRecordData = {
+        paciente: {
+          nome: form.patient_name,
+          cpf: form.patient_cpf,
+          email: form.patient_email,
+          telefone: form.patient_phone,
+          data_nascimento: form.patient_birth_date,
+          rg: form.patient_rg,
+          endereco: form.patient_address,
+          profissao: form.patient_profession,
+          contato_emergencia: form.patient_emergency_contact,
+        },
+        termo: {
+          titulo: form.accepted_term_title,
+          texto: form.accepted_term_text,
+        },
+        assinatura: {
+          data_hora: form.signed_at,
+          ip: form.ip_address,
+          navegador: form.user_agent,
+          hash_documento: form.document_hash,
+          tem_imagem_assinatura: !!form.signature_data,
+        },
+        respostas_anamnese: form.answers,
+      }
+      const signatureRecordPath = `${folderName}/registro-assinatura.json`
+      zipEntries.push({
+        name: signatureRecordPath,
+        data: JSON.stringify(signatureRecordData, null, 2),
+        date: formDate,
+      })
+
+      manifestItems.push({
+        paciente: form.patient_name,
+        cpf: form.patient_cpf,
+        procedimento: getProcedureLabel(form.form_type),
+        data_assinatura: form.signed_at,
+        hash_documento: form.document_hash,
+        pasta: folderName,
+        arquivos: [
+          pdfFileName,
+          'trilha-auditoria.txt',
+          'trilha-auditoria.json',
+          'registro-assinatura.json',
+        ],
+      })
+
+      // Linha CSV: paciente, CPF, procedimento, data do procedimento, data da assinatura, hash do documento, arquivo PDF e pasta
       const csvLine = [
         escapeCsv(form.patient_name || 'Não informado'),
         escapeCsv(form.patient_cpf || 'Não informado'),
@@ -209,6 +363,7 @@ export const backupService = {
         escapeCsv(form.signed_at || form.created),
         escapeCsv(form.document_hash || 'SHA-256'),
         escapeCsv(pdfFileName),
+        escapeCsv(folderName),
       ].join(',')
 
       csvRows.push(csvLine)
@@ -225,10 +380,24 @@ export const backupService = {
       message: 'Compactando arquivo .zip...',
     })
 
-    // Adiciona o CSV no zip
+    // Adiciona o CSV e o Manifesto com Hash no zip
     zipEntries.push({
       name: 'relatorio_fichas_assinadas.csv',
       data: csvRows.join('\r\n'),
+      date: new Date(),
+    })
+
+    const manifestData = {
+      gerado_em: new Date().toISOString(),
+      clinica: settings?.clinic_name || 'Andresa Souza Clinic',
+      cnpj: settings?.clinic_cnpj || '45.123.789/0001-90',
+      responsavel_tecnica: settings?.technical_responsible || 'Dra. Andresa Souza',
+      total_fichas: total,
+      pacotes_por_ficha: manifestItems,
+    }
+    zipEntries.push({
+      name: 'manifesto_backup.json',
+      data: JSON.stringify(manifestData, null, 2),
       date: new Date(),
     })
 

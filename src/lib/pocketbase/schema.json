@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-07T15:13:23.573Z",
+  "generatedAt": "2026-11-07T15:54:02.271Z",
   "collections": [
     {
       "name": "users",
@@ -385,8 +385,8 @@
         "list": "@request.auth.id != '' || form_submission.token = @request.query.token",
         "view": "@request.auth.id != '' || form_submission.token = @request.query.token",
         "create": "",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "update": null,
+        "delete": null
       },
       "fields": [
         {
@@ -451,6 +451,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "previous_hash",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "chain_hash",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

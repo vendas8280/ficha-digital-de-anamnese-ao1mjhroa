@@ -244,15 +244,112 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
     })
   }
 
-  // Registra auditoria
+  // Registra auditoria com encadeamento criptográfico
   try {
+    function computeSha256Hex(str) {
+      function rightRotate(value, amount) {
+        return (value >>> amount) | (value << (32 - amount))
+      }
+      var mathPow = Math.pow
+      var maxWord = mathPow(2, 32)
+      var i, j
+      var result = ''
+      var words = []
+      var asciiBitLength = str.length * 8
+      var hash = []
+      var k = []
+      var primeCounter = 0
+      var isComposite = {}
+      for (var candidate = 2; primeCounter < 64; candidate++) {
+        if (!isComposite[candidate]) {
+          for (i = candidate * candidate; i < 312; i += candidate) {
+            isComposite[i] = true
+          }
+          hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0
+          k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0
+        }
+      }
+      str += '\x80'
+      while ((str.length % 64) - 56) str += '\x00'
+      for (i = 0; i < str.length; i++) {
+        j = str.charCodeAt(i)
+        words[i >> 2] |= j << (((3 - i) % 4) * 8)
+      }
+      words[words.length] = (asciiBitLength / maxWord) | 0
+      words[words.length] = asciiBitLength | 0
+      for (j = 0; j < words.length; ) {
+        var w = words.slice(j, (j += 16))
+        var oldHash = hash.slice(0)
+        for (i = 0; i < 64; i++) {
+          var w15 = w[i - 15],
+            w2 = w[i - 2]
+          var s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)
+          var s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10)
+          w[i] = i < 16 ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0
+          var ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6])
+          var maj = (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2])
+          var temp1 =
+            (hash[7] +
+              (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) +
+              ch +
+              k[i] +
+              w[i]) |
+            0
+          var temp2 =
+            ((rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) +
+              maj) |
+            0
+          hash = [
+            (temp1 + temp2) | 0,
+            hash[0],
+            hash[1],
+            hash[2],
+            (hash[3] + temp1) | 0,
+            hash[4],
+            hash[5],
+            hash[6],
+          ]
+        }
+        for (i = 0; i < 8; i++) {
+          hash[i] = (hash[i] + oldHash[i]) | 0
+        }
+      }
+      for (i = 0; i < 8; i++) {
+        for (j = 3; j >= 0; j--) {
+          var b = (hash[i] >> (j * 8)) & 255
+          result += (b < 16 ? '0' : '') + b.toString(16)
+        }
+      }
+      return result
+    }
+
     var auditCol = $app.findCollectionByNameOrId('audit_events')
+    var lastAudits = $app.findRecordsByFilter(
+      'audit_events',
+      'form_submission = {:fid}',
+      '-created',
+      1,
+      0,
+      { fid: formRecord.id },
+    )
+    var prevHash = ''
+    if (lastAudits && lastAudits.length > 0) {
+      prevHash = lastAudits[0].getString('chain_hash') || ''
+    }
+    var nowIso = new Date().toISOString()
+    var eventDesc = 'Código de verificação enviado para ' + email
+    var chainPayload =
+      (prevHash || 'GENESIS') + '|' + formRecord.id + '|codigo_enviado|' + eventDesc + '|' + nowIso
+    var cHash = computeSha256Hex(chainPayload)
+
     var auditRec = new Record(auditCol)
     auditRec.set('form_submission', formRecord.id)
     auditRec.set('event_type', 'codigo_enviado')
-    auditRec.set('description', 'Codigo de verificacao enviado para o e-mail ' + email)
+    auditRec.set('description', eventDesc)
     auditRec.set('step_number', 2)
-    auditRec.set('timestamp', new Date().toISOString())
+    auditRec.set('timestamp', nowIso)
+    auditRec.set('previous_hash', prevHash)
+    auditRec.set('chain_hash', cHash)
     $app.save(auditRec)
   } catch (_) {}
 
@@ -333,17 +430,112 @@ routerAdd('POST', '/backend/v1/forms/verify-email-code', (e) => {
     formRecord.set('email_code_verified_at', nowIso)
     $app.save(formRecord)
 
-    // Auditoria
+    // Auditoria com proteção de código (apenas hash, sem expor número) e encadeamento
+    function computeSha256Hex(str) {
+      function rightRotate(value, amount) {
+        return (value >>> amount) | (value << (32 - amount))
+      }
+      var mathPow = Math.pow
+      var maxWord = mathPow(2, 32)
+      var i, j
+      var result = ''
+      var words = []
+      var asciiBitLength = str.length * 8
+      var hash = []
+      var k = []
+      var primeCounter = 0
+      var isComposite = {}
+      for (var candidate = 2; primeCounter < 64; candidate++) {
+        if (!isComposite[candidate]) {
+          for (i = candidate * candidate; i < 312; i += candidate) {
+            isComposite[i] = true
+          }
+          hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0
+          k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0
+        }
+      }
+      str += '\x80'
+      while ((str.length % 64) - 56) str += '\x00'
+      for (i = 0; i < str.length; i++) {
+        j = str.charCodeAt(i)
+        words[i >> 2] |= j << (((3 - i) % 4) * 8)
+      }
+      words[words.length] = (asciiBitLength / maxWord) | 0
+      words[words.length] = asciiBitLength | 0
+      for (j = 0; j < words.length; ) {
+        var w = words.slice(j, (j += 16))
+        var oldHash = hash.slice(0)
+        for (i = 0; i < 64; i++) {
+          var w15 = w[i - 15],
+            w2 = w[i - 2]
+          var s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)
+          var s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10)
+          w[i] = i < 16 ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0
+          var ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6])
+          var maj = (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2])
+          var temp1 =
+            (hash[7] +
+              (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) +
+              ch +
+              k[i] +
+              w[i]) |
+            0
+          var temp2 =
+            ((rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) +
+              maj) |
+            0
+          hash = [
+            (temp1 + temp2) | 0,
+            hash[0],
+            hash[1],
+            hash[2],
+            (hash[3] + temp1) | 0,
+            hash[4],
+            hash[5],
+            hash[6],
+          ]
+        }
+        for (i = 0; i < 8; i++) {
+          hash[i] = (hash[i] + oldHash[i]) | 0
+        }
+      }
+      for (i = 0; i < 8; i++) {
+        for (j = 3; j >= 0; j--) {
+          var b = (hash[i] >> (j * 8)) & 255
+          result += (b < 16 ? '0' : '') + b.toString(16)
+        }
+      }
+      return result
+    }
+
     var auditCol = $app.findCollectionByNameOrId('audit_events')
+    var lastAudits = $app.findRecordsByFilter(
+      'audit_events',
+      'form_submission = {:fid}',
+      '-created',
+      1,
+      0,
+      { fid: formRecord.id },
+    )
+    var prevHash = ''
+    if (lastAudits && lastAudits.length > 0) {
+      prevHash = lastAudits[0].getString('chain_hash') || ''
+    }
+    var codeHash = computeSha256Hex(code)
+    var eventDesc = 'Código de e-mail validado com sucesso para ' + email
+    var chainPayload =
+      (prevHash || 'GENESIS') + '|' + formRecord.id + '|codigo_validado|' + eventDesc + '|' + nowIso
+    var cHash = computeSha256Hex(chainPayload)
+
     var auditRec = new Record(auditCol)
     auditRec.set('form_submission', formRecord.id)
     auditRec.set('event_type', 'codigo_validado')
-    auditRec.set(
-      'description',
-      'Codigo de e-mail (' + code + ') validado com sucesso para ' + email,
-    )
+    auditRec.set('description', eventDesc)
     auditRec.set('step_number', 2)
+    auditRec.set('metadata', { code_hash: codeHash })
     auditRec.set('timestamp', nowIso)
+    auditRec.set('previous_hash', prevHash)
+    auditRec.set('chain_hash', cHash)
     $app.save(auditRec)
   } catch (err) {
     console.log('Erro ao atualizar status verificado: ' + err.message)
@@ -399,16 +591,128 @@ routerAdd('POST', '/backend/v1/forms/audit-event', (e) => {
   var ua = headers.get('User-Agent') || ''
 
   try {
+    function computeSha256Hex(str) {
+      function rightRotate(value, amount) {
+        return (value >>> amount) | (value << (32 - amount))
+      }
+      var mathPow = Math.pow
+      var maxWord = mathPow(2, 32)
+      var i, j
+      var result = ''
+      var words = []
+      var asciiBitLength = str.length * 8
+      var hash = []
+      var k = []
+      var primeCounter = 0
+      var isComposite = {}
+      for (var candidate = 2; primeCounter < 64; candidate++) {
+        if (!isComposite[candidate]) {
+          for (i = candidate * candidate; i < 312; i += candidate) {
+            isComposite[i] = true
+          }
+          hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0
+          k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0
+        }
+      }
+      str += '\x80'
+      while ((str.length % 64) - 56) str += '\x00'
+      for (i = 0; i < str.length; i++) {
+        j = str.charCodeAt(i)
+        words[i >> 2] |= j << (((3 - i) % 4) * 8)
+      }
+      words[words.length] = (asciiBitLength / maxWord) | 0
+      words[words.length] = asciiBitLength | 0
+      for (j = 0; j < words.length; ) {
+        var w = words.slice(j, (j += 16))
+        var oldHash = hash.slice(0)
+        for (i = 0; i < 64; i++) {
+          var w15 = w[i - 15],
+            w2 = w[i - 2]
+          var s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)
+          var s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10)
+          w[i] = i < 16 ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0
+          var ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6])
+          var maj = (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2])
+          var temp1 =
+            (hash[7] +
+              (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) +
+              ch +
+              k[i] +
+              w[i]) |
+            0
+          var temp2 =
+            ((rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) +
+              maj) |
+            0
+          hash = [
+            (temp1 + temp2) | 0,
+            hash[0],
+            hash[1],
+            hash[2],
+            (hash[3] + temp1) | 0,
+            hash[4],
+            hash[5],
+            hash[6],
+          ]
+        }
+        for (i = 0; i < 8; i++) {
+          hash[i] = (hash[i] + oldHash[i]) | 0
+        }
+      }
+      for (i = 0; i < 8; i++) {
+        for (j = 3; j >= 0; j--) {
+          var b = (hash[i] >> (j * 8)) & 255
+          result += (b < 16 ? '0' : '') + b.toString(16)
+        }
+      }
+      return result
+    }
+
+    // Limpa qualquer dado sensível (código de 6 dígitos numéricos) na descrição
+    var safeDesc = String(description)
+      .replace(
+        /Código de e-mail \(\d+\) validado com sucesso/gi,
+        'Código de e-mail validado com sucesso',
+      )
+      .replace(/código\s*\(\d+\)/gi, 'código')
+
     var auditCol = $app.findCollectionByNameOrId('audit_events')
+    var lastAudits = $app.findRecordsByFilter(
+      'audit_events',
+      'form_submission = {:fid}',
+      '-created',
+      1,
+      0,
+      { fid: formRecord.id },
+    )
+    var prevHash = ''
+    if (lastAudits && lastAudits.length > 0) {
+      prevHash = lastAudits[0].getString('chain_hash') || ''
+    }
+    var nowIso = new Date().toISOString()
+    var chainPayload =
+      (prevHash || 'GENESIS') +
+      '|' +
+      formRecord.id +
+      '|' +
+      eventType +
+      '|' +
+      safeDesc +
+      '|' +
+      nowIso
+    var cHash = computeSha256Hex(chainPayload)
+
     var rec = new Record(auditCol)
     rec.set('form_submission', formRecord.id)
     rec.set('event_type', eventType)
-    rec.set('description', description)
+    rec.set('description', safeDesc)
     rec.set('step_number', stepNumber)
     rec.set('ip_address', ip)
     rec.set('user_agent', ua)
     rec.set('metadata', metadata)
-    rec.set('timestamp', new Date().toISOString())
+    rec.set('timestamp', nowIso)
+    rec.set('previous_hash', prevHash)
+    rec.set('chain_hash', cHash)
     $app.save(rec)
   } catch (err) {
     console.log('Erro ao salvar audit_event: ' + err.message)
@@ -3690,6 +3994,119 @@ onRecordAfterUpdateSuccess((e) => {
       console.log('ATENCAO: Segredo RESEND_API_KEY nao configurado no ambiente!')
     }
 
+    function computeSha256HexLocal(str) {
+      function rightRotate(value, amount) {
+        return (value >>> amount) | (value << (32 - amount))
+      }
+      var mathPow = Math.pow
+      var maxWord = mathPow(2, 32)
+      var i, j
+      var result = ''
+      var words = []
+      var asciiBitLength = str.length * 8
+      var hash = []
+      var k = []
+      var primeCounter = 0
+      var isComposite = {}
+      for (var candidate = 2; primeCounter < 64; candidate++) {
+        if (!isComposite[candidate]) {
+          for (i = candidate * candidate; i < 312; i += candidate) {
+            isComposite[i] = true
+          }
+          hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0
+          k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0
+        }
+      }
+      str += '\x80'
+      while ((str.length % 64) - 56) str += '\x00'
+      for (i = 0; i < str.length; i++) {
+        j = str.charCodeAt(i)
+        words[i >> 2] |= j << (((3 - i) % 4) * 8)
+      }
+      words[words.length] = (asciiBitLength / maxWord) | 0
+      words[words.length] = asciiBitLength | 0
+      for (j = 0; j < words.length; ) {
+        var w = words.slice(j, (j += 16))
+        var oldHash = hash.slice(0)
+        for (i = 0; i < 64; i++) {
+          var w15 = w[i - 15],
+            w2 = w[i - 2]
+          var s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)
+          var s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10)
+          w[i] = i < 16 ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0
+          var ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6])
+          var maj = (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2])
+          var temp1 =
+            (hash[7] +
+              (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) +
+              ch +
+              k[i] +
+              w[i]) |
+            0
+          var temp2 =
+            ((rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) +
+              maj) |
+            0
+          hash = [
+            (temp1 + temp2) | 0,
+            hash[0],
+            hash[1],
+            hash[2],
+            (hash[3] + temp1) | 0,
+            hash[4],
+            hash[5],
+            hash[6],
+          ]
+        }
+        for (i = 0; i < 8; i++) {
+          hash[i] = (hash[i] + oldHash[i]) | 0
+        }
+      }
+      for (i = 0; i < 8; i++) {
+        for (j = 3; j >= 0; j--) {
+          var b = (hash[i] >> (j * 8)) & 255
+          result += (b < 16 ? '0' : '') + b.toString(16)
+        }
+      }
+      return result
+    }
+
+    function recordAuditInHook(formId, evType, desc, stepNum, meta) {
+      try {
+        var aCol = $app.findCollectionByNameOrId('audit_events')
+        var recs = $app.findRecordsByFilter(
+          'audit_events',
+          'form_submission = {:fid}',
+          '-created',
+          1,
+          0,
+          { fid: formId },
+        )
+        var pHash = ''
+        if (recs && recs.length > 0) {
+          pHash = recs[0].getString('chain_hash') || ''
+        }
+        var nIso = new Date().toISOString()
+        var payload = (pHash || 'GENESIS') + '|' + formId + '|' + evType + '|' + desc + '|' + nIso
+        var cHash = computeSha256HexLocal(payload)
+        var aRec = new Record(aCol)
+        aRec.set('form_submission', formId)
+        aRec.set('event_type', evType)
+        aRec.set('description', desc)
+        aRec.set('step_number', stepNum || 3)
+        aRec.set('metadata', meta || null)
+        aRec.set('timestamp', nIso)
+        aRec.set('previous_hash', pHash)
+        aRec.set('chain_hash', cHash)
+        $app.save(aRec)
+      } catch (err) {
+        console.log('Erro ao salvar auditoria em hook: ' + err.message)
+      }
+    }
+
+    var pacDeliveryOk = false
+    var pacDeliveryError = ''
+
     if (patientEmail && patientEmail.indexOf('@') > 0 && resendApiKey) {
       try {
         var resPac = $http.send({
@@ -3715,6 +4132,7 @@ onRecordAfterUpdateSuccess((e) => {
 
         if (resPac.statusCode >= 200 && resPac.statusCode < 300) {
           var dataPac = resPac.json || {}
+          pacDeliveryOk = true
           console.log(
             'Direct Resend REST API email with attachment sent to ' +
               patientEmail +
@@ -3728,16 +4146,40 @@ onRecordAfterUpdateSuccess((e) => {
               pdfResult.pages +
               ' paginas)',
           )
+          recordAuditInHook(
+            record.id,
+            'email_comprovante_enviado',
+            'Comprovante com PDF enviado com sucesso para ' + patientEmail,
+            3,
+            { resend_id: dataPac.id || '', recipient: patientEmail, status: 'enviado' },
+          )
         } else {
+          var rawMsg = resPac.raw || ''
+          pacDeliveryError = 'Status ' + resPac.statusCode + ': ' + rawMsg
           console.log(
             'Falha ao enviar e-mail para paciente via Resend API (' +
               resPac.statusCode +
               '): ' +
-              resPac.raw,
+              rawMsg,
+          )
+          recordAuditInHook(
+            record.id,
+            'email_comprovante_falha',
+            'Falha no envio do comprovante para ' + patientEmail + ': ' + rawMsg.substring(0, 200),
+            3,
+            { status_code: resPac.statusCode, error: rawMsg.substring(0, 500) },
           )
         }
       } catch (errPac) {
+        pacDeliveryError = errPac.message
         console.log('Falha ao enviar e-mail para paciente: ' + errPac.message)
+        recordAuditInHook(
+          record.id,
+          'email_comprovante_falha',
+          'Falha de conexão no envio do comprovante para ' + patientEmail + ': ' + errPac.message,
+          3,
+          { error: errPac.message },
+        )
       }
     }
 
@@ -3794,11 +4236,11 @@ onRecordAfterUpdateSuccess((e) => {
     }
 
     try {
-      record.set('pdf_attached_to_email', true)
+      record.set('pdf_attached_to_email', pacDeliveryOk)
       record.set('force_email_resend', false)
-      record.set('email_delivery_status', 'enviado')
+      record.set('email_delivery_status', pacDeliveryOk ? 'enviado' : 'falha')
       record.set('email_sent_at', new Date().toISOString())
-      record.set('email_delivery_error', '')
+      record.set('email_delivery_error', pacDeliveryError || '')
       $app.save(record)
     } catch (saveErr) {
       console.log('Erro ao salvar status de envio no form_submissions: ' + saveErr.message)

@@ -296,6 +296,36 @@ export const formsService = {
   async deleteForm(id: string): Promise<boolean> {
     return await pb.collection('form_submissions').delete(id)
   },
+
+  // Registra download ou impressão de PDF pela administradora
+  async recordPdfExportAudit(
+    formSubmissionId: string,
+    action: 'download' | 'impressao',
+    extraDetails?: string,
+  ): Promise<void> {
+    try {
+      const desc =
+        action === 'impressao'
+          ? `Administradora abriu para impressão o documento PDF da ficha${extraDetails ? ` (${extraDetails})` : ''}`
+          : `Administradora realizou o download do documento PDF da ficha${extraDetails ? ` (${extraDetails})` : ''}`
+
+      await pb.send('/backend/v1/forms/audit-event', {
+        method: 'POST',
+        body: {
+          form_submission_id: formSubmissionId,
+          event_type: action === 'impressao' ? 'pdf_impressao_admin' : 'pdf_download_admin',
+          description: desc,
+          step_number: 6,
+          metadata: {
+            action,
+            source: 'admin_panel',
+          },
+        },
+      })
+    } catch (err) {
+      console.warn('Falha ao registrar auditoria de exportação de PDF:', err)
+    }
+  },
 }
 
 export const appointmentsService = {

@@ -256,6 +256,94 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
       '</div>' +
       '</div>'
 
+    function recordAuditReminder(formId, evType, desc, meta) {
+      if (!formId) return
+      try {
+        function computeSha256(str) {
+          function rr(v, a) {
+            return (v >>> a) | (v << (32 - a))
+          }
+          var mp = Math.pow,
+            mw = mp(2, 32),
+            i,
+            j,
+            r = '',
+            w = [],
+            abl = str.length * 8,
+            h = [],
+            k = [],
+            pc = 0,
+            ic = {}
+          for (var c = 2; pc < 64; c++) {
+            if (!ic[c]) {
+              for (i = c * c; i < 312; i += c) ic[i] = true
+              h[pc] = (mp(c, 0.5) * mw) | 0
+              k[pc++] = (mp(c, 1 / 3) * mw) | 0
+            }
+          }
+          str += '\x80'
+          while ((str.length % 64) - 56) str += '\x00'
+          for (i = 0; i < str.length; i++) {
+            j = str.charCodeAt(i)
+            w[i >> 2] |= j << (((3 - i) % 4) * 8)
+          }
+          w[w.length] = (abl / mw) | 0
+          w[w.length] = abl | 0
+          for (j = 0; j < w.length; ) {
+            var ws = w.slice(j, (j += 16)),
+              oh = h.slice(0)
+            for (i = 0; i < 64; i++) {
+              var w15 = ws[i - 15],
+                w2 = ws[i - 2]
+              var s0 = rr(w15, 7) ^ rr(w15, 18) ^ (w15 >>> 3)
+              var s1 = rr(w2, 17) ^ rr(w2, 19) ^ (w2 >>> 10)
+              ws[i] = i < 16 ? ws[i] : (ws[i - 16] + s0 + ws[i - 7] + s1) | 0
+              var ch = (h[4] & h[5]) ^ (~h[4] & h[6])
+              var maj = (h[0] & h[1]) ^ (h[0] & h[2]) ^ (h[1] & h[2])
+              var t1 = (h[7] + (rr(h[4], 6) ^ rr(h[4], 11) ^ rr(h[4], 25)) + ch + k[i] + ws[i]) | 0
+              var t2 = ((rr(h[0], 2) ^ rr(h[0], 13) ^ rr(h[0], 22)) + maj) | 0
+              h = [(t1 + t2) | 0, h[0], h[1], h[2], (h[3] + t1) | 0, h[4], h[5], h[6]]
+            }
+            for (i = 0; i < 8; i++) h[i] = (h[i] + oh[i]) | 0
+          }
+          for (i = 0; i < 8; i++) {
+            for (j = 3; j >= 0; j--) {
+              var b = (h[i] >> (j * 8)) & 255
+              r += (b < 16 ? '0' : '') + b.toString(16)
+            }
+          }
+          return r
+        }
+
+        var aCol = $app.findCollectionByNameOrId('audit_events')
+        var recs = $app.findRecordsByFilter(
+          'audit_events',
+          'form_submission = {:fid}',
+          '-created',
+          1,
+          0,
+          { fid: formId },
+        )
+        var pHash = ''
+        if (recs && recs.length > 0) pHash = recs[0].getString('chain_hash') || ''
+        var nIso = new Date().toISOString()
+        var payload = (pHash || 'GENESIS') + '|' + formId + '|' + evType + '|' + desc + '|' + nIso
+        var cHash = computeSha256(payload)
+        var aRec = new Record(aCol)
+        aRec.set('form_submission', formId)
+        aRec.set('event_type', evType)
+        aRec.set('description', desc)
+        aRec.set('step_number', 3)
+        aRec.set('metadata', meta || null)
+        aRec.set('timestamp', nIso)
+        aRec.set('previous_hash', pHash)
+        aRec.set('chain_hash', cHash)
+        $app.save(aRec)
+      } catch (err) {
+        console.log('Erro ao salvar auditoria de lembrete: ' + err.message)
+      }
+    }
+
     var currentAttempts = (rem.getInt('attempts') || 0) + 1
     rem.set('attempts', currentAttempts)
     rem.set('last_attempt_at', new Date().toISOString())
@@ -299,6 +387,14 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
             res.statusCode +
             ')',
         )
+
+        recordAuditReminder(
+          formSubId,
+          'lembrete_' + kind + '_enviado',
+          'Lembrete de ' + kind + ' enviado com sucesso para ' + recipient,
+          { kind: kind, recipient: recipient, scheduled_for: rem.getString('scheduled_for') },
+        )
+
         return { ok: true, recipient: recipient }
       } else {
         var errBody = ''
@@ -315,6 +411,19 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
           $app.save(appt)
         }
         $app.save(rem)
+
+        recordAuditReminder(
+          formSubId,
+          'lembrete_' + kind + '_falha',
+          'Falha no envio do lembrete de ' +
+            kind +
+            ' para ' +
+            recipient +
+            ': ' +
+            errMsg.substring(0, 200),
+          { kind: kind, recipient: recipient, error: errMsg.substring(0, 500) },
+        )
+
         return { ok: false, error: errMsg }
       }
     } catch (netErr) {
@@ -327,6 +436,14 @@ cronAdd('marcarSemFicha', '*/5 * * * *', () => {
         $app.save(appt)
       }
       $app.save(rem)
+
+      recordAuditReminder(
+        formSubId,
+        'lembrete_' + kind + '_falha',
+        'Falha de conexão no lembrete de ' + kind + ' para ' + recipient + ': ' + netErrMsg,
+        { kind: kind, recipient: recipient, error: netErrMsg },
+      )
+
       return { ok: false, error: netErrMsg }
     }
   }

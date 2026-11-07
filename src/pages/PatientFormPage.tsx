@@ -112,6 +112,18 @@ export default function PatientFormPage() {
 
       // Check status
       if (record.status === 'preenchida') {
+        // Registra reabertura pós-assinatura na trilha de auditoria
+        formsService.recordAuditEvent({
+          token,
+          event_type: 'reabertura_pos_assinatura',
+          description: 'Paciente reabriu o link seguro após a ficha já estar preenchida e assinada',
+          step_number: 6,
+          metadata: {
+            signed_at: record.signed_at,
+            patient_email: record.patient_email,
+            status: record.status,
+          },
+        })
         setError('Esta ficha já foi preenchida e assinada anteriormente.')
         setFormRecord(record)
         setLoading(false)
@@ -139,6 +151,51 @@ export default function PatientFormPage() {
         setCodeVerified(true)
       }
 
+      // Restauração de progresso salvo automaticamente (auto-save em localStorage)
+      try {
+        const savedDataRaw = localStorage.getItem(`ficha_progress_${token}`)
+        if (savedDataRaw) {
+          const s = JSON.parse(savedDataRaw)
+          if (s.patientName) setPatientName(s.patientName)
+          if (s.patientCpf) setPatientCpf(s.patientCpf)
+          if (s.patientEmail) {
+            setPatientEmail(s.patientEmail)
+            setPatientEmailConfirm(s.patientEmail)
+          }
+          if (s.patientPhone) setPatientPhone(s.patientPhone)
+          if (s.patientBirthDate) setPatientBirthDate(s.patientBirthDate)
+          if (s.patientRg) setPatientRg(s.patientRg)
+          if (s.patientAddress) setPatientAddress(s.patientAddress)
+          if (s.patientProfession) setPatientProfession(s.patientProfession)
+          if (s.patientEmergencyContact) setPatientEmergencyContact(s.patientEmergencyContact)
+          if (s.temAlergias) setTemAlergias(s.temAlergias)
+          if (s.detalhesAlergias) setDetalhesAlergias(s.detalhesAlergias)
+          if (s.usaMedicamentos) setUsaMedicamentos(s.usaMedicamentos)
+          if (s.detalhesMedicamentos) setDetalhesMedicamentos(s.detalhesMedicamentos)
+          if (s.gestanteLactante) setGestanteLactante(s.gestanteLactante)
+          if (s.fumante) setFumante(s.fumante)
+          if (s.historicoCicatrizacao) setHistoricoCicatrizacao(s.historicoCicatrizacao)
+          if (s.doencasCronicas) setDoencasCronicas(s.doencasCronicas)
+          if (s.respostasEspecificas) setRespostasEspecificas(s.respostasEspecificas)
+          if (s.step && typeof s.step === 'number' && s.step > 1 && s.step <= 6) {
+            // Se o step for > 2, só pula se o código de email já foi verificado
+            if (
+              s.step <= 2 ||
+              record.status === 'codigo_validado' ||
+              record.email_code_verified_at ||
+              s.codeVerified
+            ) {
+              setStep(s.step)
+              if (s.codeVerified) setCodeVerified(true)
+            } else {
+              setStep(2)
+            }
+          }
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+
       // Record audit event: link opened
       formsService.recordAuditEvent({
         token,
@@ -152,6 +209,63 @@ export default function PatientFormPage() {
 
     load()
   }, [token])
+
+  // Salva o progresso no localStorage sempre que houver alteração relevante de etapa ou dados
+  useEffect(() => {
+    if (!token || !formRecord || formRecord.status === 'preenchida' || submissionComplete) return
+    try {
+      const dataToSave = {
+        step,
+        codeVerified,
+        patientName,
+        patientCpf,
+        patientEmail,
+        patientPhone,
+        patientBirthDate,
+        patientRg,
+        patientAddress,
+        patientProfession,
+        patientEmergencyContact,
+        temAlergias,
+        detalhesAlergias,
+        usaMedicamentos,
+        detalhesMedicamentos,
+        gestanteLactante,
+        fumante,
+        historicoCicatrizacao,
+        doencasCronicas,
+        respostasEspecificas,
+        updatedAt: new Date().toISOString(),
+      }
+      localStorage.setItem(`ficha_progress_${token}`, JSON.stringify(dataToSave))
+    } catch {
+      /* intentionally ignored */
+    }
+  }, [
+    token,
+    formRecord,
+    step,
+    codeVerified,
+    patientName,
+    patientCpf,
+    patientEmail,
+    patientPhone,
+    patientBirthDate,
+    patientRg,
+    patientAddress,
+    patientProfession,
+    patientEmergencyContact,
+    temAlergias,
+    detalhesAlergias,
+    usaMedicamentos,
+    detalhesMedicamentos,
+    gestanteLactante,
+    fumante,
+    historicoCicatrizacao,
+    doencasCronicas,
+    respostasEspecificas,
+    submissionComplete,
+  ])
 
   // Track term scroll
   const handleTermScroll = () => {
@@ -310,6 +424,11 @@ export default function PatientFormPage() {
         },
       })
 
+      try {
+        localStorage.removeItem(`ficha_progress_${token}`)
+      } catch {
+        /* intentionally ignored */
+      }
       setSubmissionComplete(true)
     } catch (err: unknown) {
       const msg = getErrorMessage(err)
