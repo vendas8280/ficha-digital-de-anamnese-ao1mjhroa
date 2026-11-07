@@ -85,6 +85,7 @@ export interface ClinicSettingsRecord {
   reminder_body_24h?: string
   reminder_subject_2h?: string
   reminder_body_2h?: string
+  last_backup_export_at?: string
   created: string
   updated: string
 }

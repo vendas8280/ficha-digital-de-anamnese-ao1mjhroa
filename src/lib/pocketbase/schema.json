@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-07T14:27:10.917Z",
+  "generatedAt": "2026-11-07T15:13:23.573Z",
   "collections": [
     {
       "name": "users",
@@ -169,6 +169,12 @@
         {
           "name": "reminder_body_2h",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "last_backup_export_at",
+          "type": "date",
           "required": false,
           "system": false
         }
