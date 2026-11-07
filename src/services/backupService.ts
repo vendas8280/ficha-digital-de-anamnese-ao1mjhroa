@@ -7,6 +7,8 @@ import {
   clinicSettingsService,
 } from '@/services/forms'
 import { generateFormPdfBytes } from '@/lib/pdfBinary'
+import { generateAuditProofPdfBytes } from '@/lib/auditProofPdf'
+import { getProofPdfFilename } from '@/lib/formCode'
 import { createZipBlob, ZipFileEntry } from '@/lib/zipWriter'
 
 export interface BackupProgress {
@@ -216,7 +218,7 @@ export const backupService = {
       const pdfFileName = `${folderName}.pdf`
       const pdfFilePath = `${folderName}/${pdfFileName}`
 
-      // 1. Gerar PDF binário
+      // 1. Gerar PDF binário da ficha
       const pdfBytes = generateFormPdfBytes(form, settings)
       const formDate = form.signed_at ? new Date(form.signed_at) : new Date(form.created)
 
@@ -226,8 +228,19 @@ export const backupService = {
         date: formDate,
       })
 
-      // 2. Trilha de auditoria legível (.txt)
+      // 1.1 Gerar Comprovante de Assinatura Eletrônica (PDF separado)
       const audits = auditEventsByFormId.get(form.id) || []
+      const proofPdfBytes = generateAuditProofPdfBytes(form, audits, settings, appt)
+      const proofFileName = getProofPdfFilename(form)
+      const proofFilePath = `${folderName}/${proofFileName}`
+
+      zipEntries.push({
+        name: proofFilePath,
+        data: proofPdfBytes,
+        date: formDate,
+      })
+
+      // 2. Trilha de auditoria legível (.txt)
       const auditLines: string[] = [
         '================================================================================',
         'TRILHA DE AUDITORIA DIGITAL — ANDRESA SOUZA CLINIC',
@@ -349,6 +362,7 @@ export const backupService = {
         pasta: folderName,
         arquivos: [
           pdfFileName,
+          proofFileName,
           'trilha-auditoria.txt',
           'trilha-auditoria.json',
           'registro-assinatura.json',

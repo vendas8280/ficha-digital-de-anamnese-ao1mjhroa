@@ -24,11 +24,13 @@ import {
   MapPin,
   Briefcase,
   FileText,
+  FileCheck,
   Loader2,
   Copy,
   Check,
   Send,
 } from 'lucide-react'
+import { downloadAuditProofPdf } from '@/services/auditProofDownload'
 import {
   AlertDialog,
   AlertDialogAction,

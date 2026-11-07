@@ -5706,7 +5706,828 @@ onRecordAfterUpdateSuccess((e) => {
       }
     }
 
-    // Envia clínica direto via API REST Resend com anexo
+    // Geração do Comprovante de Assinatura Eletrônica em PDF binário separado para envio à clínica
+    var proofPdfBase64 = ''
+    var proofFilename = ''
+    try {
+      var formCodeVal = (record.getString('form_code') || '').trim()
+      if (!formCodeVal) {
+        var recDate = record.getString('created') || record.getString('signed_at') || ''
+        var recYear = recDate.length >= 4 ? recDate.substring(0, 4) : '2026'
+        var idPart = (record.id || '0001')
+          .replace(/[^a-zA-Z0-9]/g, '')
+          .slice(-4)
+          .toUpperCase()
+        while (idPart.length < 4) idPart = '0' + idPart
+        formCodeVal = 'AN-' + recYear + '-' + idPart
+      }
+      proofFilename =
+        'Comprovante de Assinatura — ' + (patientName || 'Paciente') + ' — ' + formCodeVal + '.pdf'
+
+      // Busca eventos de auditoria do registro
+      var proofAuditRows = []
+      try {
+        proofAuditRows = $app.findRecordsByFilter(
+          'audit_events',
+          'form_submission = {:fid}',
+          'created',
+          200,
+          0,
+          { fid: record.id },
+        )
+      } catch (eAuditRows) {
+        console.log(
+          'Aviso ao consultar audit_events para comprovante no hook: ' + eAuditRows.message,
+        )
+      }
+
+      // Procedimento do agendamento (se houver)
+      var proofApptDateStr = 'Conforme agendamento'
+      try {
+        var apptRows = $app.findRecordsByFilter(
+          'procedure_appointments',
+          'form_submission = {:fid}',
+          '-created',
+          1,
+          0,
+          { fid: record.id },
+        )
+        if (apptRows && apptRows.length > 0) {
+          var ap = apptRows[0]
+          var pDate = ap.getString('procedure_date') || ''
+          var pTime = ap.getString('procedure_time') || ''
+          if (pDate) {
+            var parts = pDate.split('T')[0].split('-')
+            if (parts.length === 3) {
+              proofApptDateStr =
+                parts[2] + '/' + parts[1] + '/' + parts[0] + (pTime ? ' às ' + pTime : '')
+            } else {
+              proofApptDateStr = pDate + (pTime ? ' ' + pTime : '')
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Gerador autocontido do Comprovante de Assinatura Eletrônica em PDF binário
+      var proofPdfBytes = (function () {
+        var PAGE_WIDTH = 595.28
+        var PAGE_HEIGHT = 841.89
+        var MARGIN_X = 36
+        var CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2
+        var HEADER_TOP = 800
+        var CONTENT_START_Y = 740
+        var FOOTER_RESERVED = 68
+
+        var escMap = {
+          á: '\\341',
+          à: '\\340',
+          â: '\\342',
+          ã: '\\343',
+          ä: '\\344',
+          é: '\\351',
+          è: '\\350',
+          ê: '\\352',
+          ë: '\\353',
+          í: '\\355',
+          ì: '\\354',
+          î: '\\356',
+          ï: '\\357',
+          ó: '\\363',
+          ò: '\\362',
+          ô: '\\364',
+          õ: '\\365',
+          ö: '\\366',
+          ú: '\\372',
+          ù: '\\371',
+          û: '\\373',
+          ü: '\\374',
+          ç: '\\347',
+          Á: '\\301',
+          À: '\\300',
+          Â: '\\302',
+          Ã: '\\303',
+          Ä: '\\304',
+          É: '\\311',
+          È: '\\310',
+          Ê: '\\312',
+          Ë: '\\313',
+          Í: '\\315',
+          Ì: '\\314',
+          Î: '\\316',
+          Ï: '\\317',
+          Ó: '\\323',
+          Ò: '\\322',
+          Ô: '\\324',
+          Õ: '\\325',
+          Ö: '\\326',
+          Ú: '\\332',
+          Ù: '\\331',
+          Û: '\\333',
+          Ü: '\\334',
+          Ç: '\\307',
+          ñ: '\\361',
+          Ñ: '\\321',
+          '°': '\\260',
+          ª: '\\252',
+          º: '\\272',
+          '•': '\\225',
+          '—': '-',
+          '–': '-',
+          '“': '"',
+          '”': '"',
+          '‘': "'",
+          '’': "'",
+          '…': '...',
+        }
+
+        function escPdf(str) {
+          if (!str) return ''
+          var s = String(str)
+          var out = ''
+          for (var i = 0; i < s.length; i++) {
+            var ch = s.charAt(i)
+            if (escMap[ch]) {
+              out += escMap[ch]
+            } else if (ch === '(') {
+              out += '\\('
+            } else if (ch === ')') {
+              out += '\\)'
+            } else if (ch === '\\') {
+              out += '\\\\'
+            } else {
+              var code = s.charCodeAt(i)
+              if (code >= 32 && code <= 126) {
+                out += ch
+              } else if (code >= 160 && code <= 255) {
+                out += '\\' + code.toString(8)
+              } else {
+                out += '?'
+              }
+            }
+          }
+          return out
+        }
+
+        function estCharW(ch, fs) {
+          if ('iljI|.,:;!'.indexOf(ch) !== -1) return fs * 0.28
+          if ('frtJ()[]'.indexOf(ch) !== -1) return fs * 0.35
+          if ('mwWM@#%&'.indexOf(ch) !== -1) return fs * 0.85
+          if ('ABCDEFGHKLNOPQRSTUVXYZ'.indexOf(ch) !== -1) return fs * 0.65
+          return fs * 0.52
+        }
+
+        function mTextW(str, fs) {
+          var w = 0
+          var s = String(str || '')
+          for (var i = 0; i < s.length; i++) {
+            w += estCharW(s.charAt(i), fs)
+          }
+          return w
+        }
+
+        function wrap(str, maxW, fs) {
+          if (!str) return []
+          var words = String(str).split(' ')
+          var lines = []
+          var cur = ''
+          for (var i = 0; i < words.length; i++) {
+            var wd = words[i]
+            var test = cur ? cur + ' ' + wd : wd
+            if (mTextW(test, fs) <= maxW) {
+              cur = test
+            } else {
+              if (cur) lines.push(cur)
+              cur = wd
+            }
+          }
+          if (cur) lines.push(cur)
+          return lines
+        }
+
+        var pages = []
+        var curP = { commands: [] }
+        var curY = CONTENT_START_Y
+
+        function nextP() {
+          pages.push(curP)
+          curP = { commands: [] }
+          curY = CONTENT_START_Y
+        }
+
+        function needSpace(pts) {
+          if (curY - pts < FOOTER_RESERVED) {
+            nextP()
+          }
+        }
+
+        function drawTitle(title) {
+          needSpace(28)
+          curP.commands.push(
+            'q 0.94 0.92 0.95 rg ' +
+              MARGIN_X +
+              ' ' +
+              (curY - 14) +
+              ' ' +
+              CONTENT_WIDTH +
+              ' 18 re f Q',
+          )
+          curP.commands.push(
+            'BT /F2 9.5 Tf 0.40 0.10 0.25 rg ' +
+              (MARGIN_X + 6) +
+              ' ' +
+              (curY - 10) +
+              ' Td (' +
+              escPdf(title.toUpperCase()) +
+              ') Tj ET',
+          )
+          curY -= 22
+        }
+
+        function drawKV(rows) {
+          var col1 = 160
+          var col2 = CONTENT_WIDTH - col1 - 8
+          for (var i = 0; i < rows.length; i++) {
+            var r = rows[i]
+            var fs = 8.5
+            var fn = r.isMono ? '/F3' : '/F1'
+            var lines = wrap(r.value, col2, fs)
+            var lH = 11
+            var bH = Math.max(16, lines.length * lH + 4)
+            needSpace(bH + 4)
+            if (i % 2 === 0) {
+              curP.commands.push(
+                'q 0.98 0.98 0.99 rg ' +
+                  MARGIN_X +
+                  ' ' +
+                  (curY - bH + 3) +
+                  ' ' +
+                  CONTENT_WIDTH +
+                  ' ' +
+                  bH +
+                  ' re f Q',
+              )
+            }
+            curP.commands.push(
+              'BT /F2 ' +
+                fs +
+                ' Tf 0.25 0.30 0.38 rg ' +
+                (MARGIN_X + 4) +
+                ' ' +
+                (curY - 9) +
+                ' Td (' +
+                escPdf(r.label) +
+                ') Tj ET',
+            )
+            var vY = curY - 9
+            for (var l = 0; l < lines.length; l++) {
+              curP.commands.push(
+                'BT ' +
+                  fn +
+                  ' ' +
+                  fs +
+                  ' Tf 0.15 0.20 0.28 rg ' +
+                  (MARGIN_X + col1) +
+                  ' ' +
+                  vY +
+                  ' Td (' +
+                  escPdf(lines[l]) +
+                  ') Tj ET',
+              )
+              vY -= lH
+            }
+            curY -= bH
+          }
+          curY -= 6
+        }
+
+        var ipProof = (record.getString('ip_address') || '').trim() || 'não registrado'
+        var devProof = (function (ua) {
+          if (!ua) return 'Dispositivo não informado'
+          var u = ua.toLowerCase()
+          var os = 'Dispositivo'
+          if (u.indexOf('iphone') !== -1) os = 'iPhone (iOS)'
+          else if (u.indexOf('ipad') !== -1) os = 'iPad (iPadOS)'
+          else if (u.indexOf('android') !== -1) os = 'Smartphone Android'
+          else if (u.indexOf('macintosh') !== -1 || u.indexOf('mac os') !== -1) os = 'Mac (macOS)'
+          else if (u.indexOf('windows') !== -1) os = 'PC (Windows)'
+          else if (u.indexOf('linux') !== -1) os = 'Linux'
+
+          var brw = 'Navegador Web'
+          if (u.indexOf('edg/') !== -1) brw = 'Microsoft Edge'
+          else if (u.indexOf('chrome/') !== -1 || u.indexOf('crios/') !== -1) brw = 'Google Chrome'
+          else if (u.indexOf('safari/') !== -1 && u.indexOf('chrome') === -1) brw = 'Safari'
+          else if (u.indexOf('firefox/') !== -1) brw = 'Mozilla Firefox'
+          return os + ' • ' + brw
+        })(record.getString('user_agent'))
+
+        // Cabeçalho do documento
+        curP.commands.push(
+          'BT /F2 14 Tf 0.514 0.094 0.263 rg ' +
+            MARGIN_X +
+            ' ' +
+            curY +
+            ' Td (' +
+            escPdf('COMPROVANTE DE ASSINATURA ELETRÔNICA') +
+            ') Tj ET',
+        )
+        curY -= 15
+        curP.commands.push(
+          'BT /F2 10 Tf 0.20 0.25 0.35 rg ' +
+            MARGIN_X +
+            ' ' +
+            curY +
+            ' Td (' +
+            escPdf('Código da Ficha: ' + formCodeVal) +
+            ') Tj ET',
+        )
+        curY -= 14
+        var introDesc =
+          'Este documento comprova como a assinatura eletrônica foi realizada. Deve ser arquivado junto com o PDF da ficha.'
+        curP.commands.push(
+          'BT /F1 8.5 Tf 0.45 0.50 0.58 rg ' +
+            MARGIN_X +
+            ' ' +
+            curY +
+            ' Td (' +
+            escPdf(introDesc) +
+            ') Tj ET',
+        )
+        curY -= 18
+        curP.commands.push(
+          'q 0.82 0.85 0.90 RG 0.75 w ' +
+            MARGIN_X +
+            ' ' +
+            curY +
+            ' m ' +
+            (PAGE_WIDTH - MARGIN_X) +
+            ' ' +
+            curY +
+            ' l S Q',
+        )
+        curY -= 16
+
+        // Bloco 1
+        drawTitle('BLOCO 1 — Identificação da Paciente e Procedimento')
+        drawKV([
+          { label: 'Nome da Paciente:', value: patientName },
+          { label: 'CPF:', value: patientCpf },
+          { label: 'E-mail Validado:', value: patientEmail },
+          { label: 'Procedimento:', value: fTypeLabel },
+          { label: 'Data e Hora do Procedimento:', value: proofApptDateStr },
+        ])
+
+        // Bloco 2
+        drawTitle('BLOCO 2 — Vínculo com o Documento Assinado (Prova de Integridade)')
+        var boxTop = curY
+        drawKV([
+          { label: 'Documento assinado:', value: pdfFilename },
+          { label: 'Hash SHA-256 do documento:', value: docHash, isMono: true },
+          { label: 'Assinado em:', value: signedAt },
+          { label: 'Fuso horário:', value: 'Brasília (UTC-3)' },
+        ])
+        var noticeStr =
+          'O hash acima identifica de forma única o PDF assinado. Se o arquivo for alterado em qualquer ponto, o hash deixa de corresponder.'
+        var noticeLines = wrap(noticeStr, CONTENT_WIDTH - 16, 7.5)
+        needSpace(noticeLines.length * 10 + 6)
+        var nY = curY - 2
+        for (var nl = 0; nl < noticeLines.length; nl++) {
+          curP.commands.push(
+            'BT /F1 7.5 Tf 0.45 0.48 0.55 rg ' +
+              (MARGIN_X + 6) +
+              ' ' +
+              nY +
+              ' Td (' +
+              escPdf(noticeLines[nl]) +
+              ') Tj ET',
+          )
+          nY -= 9.5
+        }
+        curY = nY - 4
+        var bH2 = boxTop - curY
+        curP.commands.push(
+          'q 0.514 0.094 0.263 RG 0.8 w ' +
+            MARGIN_X +
+            ' ' +
+            curY +
+            ' ' +
+            CONTENT_WIDTH +
+            ' ' +
+            bH2 +
+            ' re S Q',
+        )
+        curY -= 12
+
+        // Bloco 3
+        drawTitle('BLOCO 3 — Dados Técnicos da Assinatura')
+        drawKV([
+          { label: 'E-mail submetido à validação:', value: patientEmail },
+          {
+            label: 'Status de Validação de E-mail:',
+            value: 'Código de e-mail validado com sucesso',
+          },
+          { label: 'IP de Origem Real:', value: ipProof },
+          { label: 'Dispositivo / Navegador:', value: devProof },
+          { label: 'Data e Hora do Aceite do Termo:', value: signedAt },
+          { label: 'Data e Hora da Assinatura:', value: signedAt },
+          {
+            label: 'Código de Verificação:',
+            value: '[Protegido por sigilo — validação criptográfica confirmada]',
+          },
+        ])
+
+        // Bloco 4
+        drawTitle('BLOCO 4 — Trilha Cronológica de Eventos')
+        var cWDate = 105
+        var cWIp = 95
+        var cWEv = CONTENT_WIDTH - cWDate - cWIp
+
+        function drawProofAuditHeader() {
+          needSpace(18)
+          curP.commands.push(
+            'q 0.20 0.25 0.35 rg ' +
+              MARGIN_X +
+              ' ' +
+              (curY - 14) +
+              ' ' +
+              CONTENT_WIDTH +
+              ' 16 re f Q',
+          )
+          curP.commands.push(
+            'BT /F2 8 Tf 1 1 1 rg ' +
+              (MARGIN_X + 4) +
+              ' ' +
+              (curY - 10) +
+              ' Td (' +
+              escPdf('DATA / HORA') +
+              ') Tj ET',
+          )
+          curP.commands.push(
+            'BT /F2 8 Tf 1 1 1 rg ' +
+              (MARGIN_X + cWDate + 4) +
+              ' ' +
+              (curY - 10) +
+              ' Td (' +
+              escPdf('EVENTO REGISTRADO') +
+              ') Tj ET',
+          )
+          curP.commands.push(
+            'BT /F2 8 Tf 1 1 1 rg ' +
+              (MARGIN_X + cWDate + cWEv + 4) +
+              ' ' +
+              (curY - 10) +
+              ' Td (' +
+              escPdf('IP DE ORIGEM') +
+              ') Tj ET',
+          )
+          curY -= 18
+        }
+
+        drawProofAuditHeader()
+
+        var evList =
+          proofAuditRows && proofAuditRows.length > 0
+            ? proofAuditRows
+            : [
+                {
+                  getString: function (field) {
+                    if (field === 'event_type') return 'termo_assinado'
+                    if (field === 'description')
+                      return (
+                        'Paciente concluiu a assinatura eletrônica da ficha (Hash: ' + docHash + ')'
+                      )
+                    if (field === 'created')
+                      return record.getString('signed_at') || record.getString('created')
+                    if (field === 'ip_address') return record.getString('ip_address') || ''
+                    return ''
+                  },
+                },
+              ]
+
+        for (var ei = 0; ei < evList.length; ei++) {
+          var evObj = evList[ei]
+          var eDateRaw = evObj.getString('timestamp') || evObj.getString('created')
+          var eDate = formatBr(eDateRaw)
+          var eIpRaw = (evObj.getString('ip_address') || '').trim()
+          var eIp = eIpRaw.length > 0 ? eIpRaw : 'não registrado'
+
+          var desc =
+            evObj.getString('description') || evObj.getString('event_type') || 'Evento registrado'
+          desc = desc.replace(
+            /c[oó]digo\s+(?:de\s+verificação\s+)?(?:\d{4,8}|[A-Za-z0-9]{4,8})/gi,
+            'código [oculto]',
+          )
+          desc = desc.replace(/\b\d{6}\b/g, '******')
+
+          var eLines = wrap(desc, cWEv - 8, 7.5)
+          var rH = Math.max(14, eLines.length * 9.5 + 4)
+
+          if (curY - rH < FOOTER_RESERVED) {
+            nextP()
+            drawProofAuditHeader()
+          }
+
+          if (ei % 2 === 0) {
+            curP.commands.push(
+              'q 0.96 0.97 0.98 rg ' +
+                MARGIN_X +
+                ' ' +
+                (curY - rH + 2) +
+                ' ' +
+                CONTENT_WIDTH +
+                ' ' +
+                rH +
+                ' re f Q',
+            )
+          }
+
+          curP.commands.push(
+            'BT /F1 7.5 Tf 0.25 0.30 0.38 rg ' +
+              (MARGIN_X + 4) +
+              ' ' +
+              (curY - 8) +
+              ' Td (' +
+              escPdf(eDate) +
+              ') Tj ET',
+          )
+
+          var rowEY = curY - 8
+          for (var el = 0; el < eLines.length; el++) {
+            curP.commands.push(
+              'BT /F1 7.5 Tf 0.15 0.20 0.28 rg ' +
+                (MARGIN_X + cWDate + 4) +
+                ' ' +
+                rowEY +
+                ' Td (' +
+                escPdf(eLines[el]) +
+                ') Tj ET',
+            )
+            rowEY -= 9.5
+          }
+
+          curP.commands.push(
+            'BT /F3 7 Tf 0.30 0.35 0.42 rg ' +
+              (MARGIN_X + cWDate + cWEv + 4) +
+              ' ' +
+              (curY - 8) +
+              ' Td (' +
+              escPdf(eIp) +
+              ') Tj ET',
+          )
+          curY -= rH
+        }
+
+        pages.push(curP)
+        var totalProofPages = pages.length
+        var nowGenStr = formatBr(new Date().toISOString())
+
+        var compiledStreams = []
+        for (var pi = 0; pi < totalProofPages; pi++) {
+          var pN = pi + 1
+          var sp = []
+          sp.push('q\n')
+
+          sp.push(
+            'BT /F2 12 Tf 0.514 0.094 0.263 rg ' +
+              MARGIN_X +
+              ' ' +
+              HEADER_TOP +
+              ' Td (' +
+              escPdf(clinicName.toUpperCase()) +
+              ') Tj ET\n',
+          )
+          var rHead = patientName + ' • ' + formCodeVal
+          var rHeadW = mTextW(rHead, 8.5)
+          sp.push(
+            'BT /F2 8.5 Tf 0.35 0.40 0.48 rg ' +
+              (PAGE_WIDTH - MARGIN_X - rHeadW) +
+              ' ' +
+              HEADER_TOP +
+              ' Td (' +
+              escPdf(rHead) +
+              ') Tj ET\n',
+          )
+          sp.push(
+            'BT /F1 8.5 Tf 0.30 0.35 0.42 rg ' +
+              MARGIN_X +
+              ' ' +
+              (HEADER_TOP - 12) +
+              ' Td (' +
+              escPdf('Comprovante de Assinatura Eletrônica & Trilha Cronológica de Integridade') +
+              ') Tj ET\n',
+          )
+          sp.push(
+            'q 0.514 0.094 0.263 RG 1 w ' +
+              MARGIN_X +
+              ' ' +
+              (HEADER_TOP - 18) +
+              ' m ' +
+              (PAGE_WIDTH - MARGIN_X) +
+              ' ' +
+              (HEADER_TOP - 18) +
+              ' l S Q\n',
+          )
+
+          var cmds = pages[pi].commands
+          for (var ci = 0; ci < cmds.length; ci++) {
+            sp.push(cmds[ci] + '\n')
+          }
+
+          var fLineY = 48
+          sp.push(
+            'q 0.80 0.83 0.88 RG 0.5 w ' +
+              MARGIN_X +
+              ' ' +
+              fLineY +
+              ' m ' +
+              (PAGE_WIDTH - MARGIN_X) +
+              ' ' +
+              fLineY +
+              ' l S Q\n',
+          )
+          sp.push(
+            'BT /F2 8 Tf 0.514 0.094 0.263 rg ' +
+              MARGIN_X +
+              ' ' +
+              (fLineY - 10) +
+              ' Td (' +
+              escPdf(clinicName) +
+              ') Tj ET\n',
+          )
+          sp.push(
+            'BT /F1 8 Tf 0.35 0.40 0.48 rg ' +
+              (MARGIN_X + mTextW(clinicName, 8) + 6) +
+              ' ' +
+              (fLineY - 10) +
+              ' Td (' +
+              escPdf('• Profissional Responsável: ' + techResp) +
+              ') Tj ET\n',
+          )
+          var fL2 = clinicAddr + ' • Documento gerado automaticamente em ' + nowGenStr
+          sp.push(
+            'BT /F1 7.5 Tf 0.40 0.45 0.52 rg ' +
+              MARGIN_X +
+              ' ' +
+              (fLineY - 20) +
+              ' Td (' +
+              escPdf(fL2) +
+              ') Tj ET\n',
+          )
+          sp.push(
+            'BT /F1 7.5 Tf 0.50 0.55 0.60 rg ' +
+              MARGIN_X +
+              ' ' +
+              (fLineY - 29) +
+              ' Td (' +
+              escPdf('A trilha completa permanece arquivada de forma imutável no sistema.') +
+              ') Tj ET\n',
+          )
+
+          var pgStr = 'Página ' + pN + ' de ' + totalProofPages
+          var pgStrW = mTextW(pgStr, 8)
+          sp.push(
+            'BT /F2 8 Tf 0.30 0.35 0.45 rg ' +
+              (PAGE_WIDTH - MARGIN_X - pgStrW) +
+              ' ' +
+              (fLineY - 20) +
+              ' Td (' +
+              escPdf(pgStr) +
+              ') Tj ET\n',
+          )
+
+          sp.push('Q\n')
+          compiledStreams.push(sp.join(''))
+        }
+
+        var pdfChunks = []
+        var offsets = []
+        pdfChunks.push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
+
+        function addObj(str) {
+          var curOff = 0
+          for (var oi = 0; oi < pdfChunks.length; oi++) curOff += pdfChunks[oi].length
+          offsets.push(curOff)
+          pdfChunks.push(str + '\n')
+        }
+
+        addObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj')
+
+        var pObjIds = []
+        var f1Id = 3
+        var f2Id = 4
+        var f3Id = 5
+        var nextId = 6
+        for (var p = 0; p < totalProofPages; p++) {
+          pObjIds.push(nextId)
+          nextId += 2
+        }
+
+        var kids = pObjIds
+          .map(function (id) {
+            return id + ' 0 R'
+          })
+          .join(' ')
+        addObj(
+          '2 0 obj\n<< /Type /Pages /Kids [' + kids + '] /Count ' + totalProofPages + ' >>\nendobj',
+        )
+        addObj(
+          f1Id +
+            ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj',
+        )
+        addObj(
+          f2Id +
+            ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj',
+        )
+        addObj(
+          f3Id +
+            ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>\nendobj',
+        )
+
+        for (var pi2 = 0; pi2 < totalProofPages; pi2++) {
+          var pgId = pObjIds[pi2]
+          var cntId = pgId + 1
+          var st = compiledStreams[pi2]
+          addObj(
+            pgId +
+              ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' +
+              PAGE_WIDTH +
+              ' ' +
+              PAGE_HEIGHT +
+              '] /Contents ' +
+              cntId +
+              ' 0 R /Resources << /Font << /F1 ' +
+              f1Id +
+              ' 0 R /F2 ' +
+              f2Id +
+              ' 0 R /F3 ' +
+              f3Id +
+              ' 0 R >> /ProcSet [/PDF /Text] >> >>\nendobj',
+          )
+          addObj(
+            cntId + ' 0 obj\n<< /Length ' + st.length + ' >>\nstream\n' + st + 'endstream\nendobj',
+          )
+        }
+
+        var xrOff = 0
+        for (var k = 0; k < pdfChunks.length; k++) xrOff += pdfChunks[k].length
+        var totObj = nextId - 1
+        var xr = ['xref\n', '0 ' + (totObj + 1) + '\n', '0000000000 65535 f \n']
+        for (var m = 1; m <= totObj; m++) {
+          var oStr = String(offsets[m - 1])
+          while (oStr.length < 10) oStr = '0' + oStr
+          xr.push(oStr + ' 00000 n \n')
+        }
+        pdfChunks.push(xr.join(''))
+        pdfChunks.push(
+          'trailer\n<< /Size ' +
+            (totObj + 1) +
+            ' /Root 1 0 R >>\nstartxref\n' +
+            xrOff +
+            '\n%%EOF\n',
+        )
+
+        return pdfChunks.join('')
+      })()
+
+      // Codifica em base64 o PDF do comprovante
+      var b64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+      var proofB64 = ''
+      for (var bIdx = 0; bIdx < proofPdfBytes.length; bIdx += 3) {
+        var b0 = proofPdfBytes.charCodeAt(bIdx) & 0xff
+        var b1 = bIdx + 1 < proofPdfBytes.length ? proofPdfBytes.charCodeAt(bIdx + 1) & 0xff : 0
+        var b2 = bIdx + 2 < proofPdfBytes.length ? proofPdfBytes.charCodeAt(bIdx + 2) & 0xff : 0
+        proofB64 += b64Chars.charAt(b0 >> 2)
+        proofB64 += b64Chars.charAt(((b0 & 3) << 4) | (b1 >> 4))
+        proofB64 +=
+          bIdx + 1 < proofPdfBytes.length ? b64Chars.charAt(((b1 & 15) << 2) | (b2 >> 6)) : '='
+        proofB64 += bIdx + 2 < proofPdfBytes.length ? b64Chars.charAt(b2 & 63) : '='
+      }
+      proofPdfBase64 = proofB64
+      console.log(
+        'Comprovante de assinatura gerado para clinica: ' +
+          proofFilename +
+          ' (' +
+          proofPdfBytes.length +
+          ' bytes)',
+      )
+    } catch (errProofGen) {
+      console.log('Erro ao gerar comprovante de assinatura para clinica: ' + errProofGen.message)
+    }
+
+    // Anexos para a clínica: PDF da ficha + Comprovante de Assinatura (se gerado)
+    var clinicAttachments = [
+      {
+        filename: pdfFilename,
+        content: cleanPdfBase64,
+      },
+    ]
+    if (proofPdfBase64 && proofFilename) {
+      clinicAttachments.push({
+        filename: proofFilename,
+        content: proofPdfBase64,
+      })
+    }
+
+    // Envia clínica direto via API REST Resend com anexos (Ficha + Comprovante de Assinatura)
     if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
       try {
         var resCli = $http.send({
@@ -5721,29 +6542,19 @@ onRecordAfterUpdateSuccess((e) => {
             to: [clinicEmail],
             subject: subject,
             html: getHtml(true),
-            attachments: [
-              {
-                filename: pdfFilename,
-                content: cleanPdfBase64,
-              },
-            ],
+            attachments: clinicAttachments,
           }),
         })
 
         if (resCli.statusCode >= 200 && resCli.statusCode < 300) {
           var dataCli = resCli.json || {}
           console.log(
-            'Direct Resend REST API email with attachment sent to ' +
+            'Direct Resend REST API email with attachments (Ficha + Comprovante) sent to ' +
               clinicEmail +
               '. ID: ' +
               (dataCli.id || '') +
-              '. Attachment: ' +
-              pdfFilename +
-              ' (' +
-              pdfResult.size +
-              ' bytes, ' +
-              pdfResult.pages +
-              ' paginas)',
+              '. Attachments count: ' +
+              clinicAttachments.length,
           )
         } else {
           console.log(

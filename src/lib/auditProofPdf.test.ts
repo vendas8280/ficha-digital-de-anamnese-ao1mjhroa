@@ -30,7 +30,9 @@ describe('Comprovante de Assinatura Eletrônica', () => {
       event_type: 'link_aberto',
       description: 'Paciente abriu o link seguro da ficha de anamnese',
       ip_address: '191.15.16.45',
+      timestamp: '2026-11-04T01:21:20.000Z',
       created: '2026-11-04T01:21:20.000Z',
+      updated: '2026-11-04T01:21:20.000Z',
     },
     {
       id: 'a2',
@@ -38,7 +40,9 @@ describe('Comprovante de Assinatura Eletrônica', () => {
       event_type: 'codigo_enviado',
       description: 'Código de verificação 849201 enviado para prime.impr@gmail.com',
       ip_address: '', // IP ausente
+      timestamp: '2026-11-04T01:21:30.000Z',
       created: '2026-11-04T01:21:30.000Z',
+      updated: '2026-11-04T01:21:30.000Z',
     },
     {
       id: 'a3',
@@ -46,7 +50,9 @@ describe('Comprovante de Assinatura Eletrônica', () => {
       event_type: 'codigo_validado',
       description: 'Código de e-mail validado com sucesso para prime.impr@gmail.com',
       ip_address: '191.15.16.45',
+      timestamp: '2026-11-04T01:21:45.000Z',
       created: '2026-11-04T01:21:45.000Z',
+      updated: '2026-11-04T01:21:45.000Z',
     },
     {
       id: 'a4',
@@ -55,7 +61,9 @@ describe('Comprovante de Assinatura Eletrônica', () => {
       description:
         'Paciente concluiu a assinatura eletrônica da ficha de anamnese (Hash: 0babb1654e424a70e9c38035884e68ec183136781372044e07476574e1c2452c)',
       ip_address: '191.15.16.45',
+      timestamp: '2026-11-04T01:22:01.000Z',
       created: '2026-11-04T01:22:01.000Z',
+      updated: '2026-11-04T01:22:01.000Z',
     },
   ]
 
