@@ -2393,7 +2393,7 @@ routerAdd('POST', '/backend/v1/forms/send-audit-proof', (e) => {
 
   var clinicSettings = null
   try {
-    var cRecords = $app.findRecordsByFilter('clinic_settings', '1=1', '-created', 1, 0)
+    var cRecords = $app.findRecordsByFilter('clinic_settings', '', '-created', 1, 0)
     if (cRecords && cRecords.length > 0) {
       clinicSettings = cRecords[0]
     }
@@ -2401,31 +2401,1037 @@ routerAdd('POST', '/backend/v1/forms/send-audit-proof', (e) => {
     console.log('Aviso ao carregar clinic_settings para comprovante completo: ' + errSet.message)
   }
 
-  var clinicName = clinicSettings
-    ? clinicSettings.getString('clinic_name') || 'Clínica'
-    : 'Andresa Souza Clinic'
-  var techResp = clinicSettings
-    ? clinicSettings.getString('technical_responsible') || 'Andresa Souza'
-    : 'Andresa Souza'
-  var profReg = clinicSettings
-    ? clinicSettings.getString('professional_registry') || 'Resp. Técnica'
-    : 'Resp. Técnica'
-  var clinicAddr = clinicSettings
-    ? clinicSettings.getString('clinic_address') ||
-      'Rua Jovino de Medeiros, 23, Salgado Filho, Aracaju - SE'
-    : 'Rua Jovino de Medeiros, 23, Salgado Filho, Aracaju - SE'
-  var clinicPhone = clinicSettings
-    ? clinicSettings.getString('clinic_phone') || '(79) 99809-1314'
-    : '(79) 99809-1314'
+  var clinicName = 'Andresa Souza Clinic'
+  var techResp = 'Andresa Souza — CREFITO-13 000000-F'
+  var profReg = 'CREFITO-13 000000-F'
+  var clinicAddr = 'Jardins, Aracaju - SE'
+  var clinicPhone = '(79) 99980-9134'
+  var clinicEmail = 'andresasouzaclinic@gmail.com'
+  var senderEmail = 'Ficha Digital - Andresa Souza Clinic <ficha@andresasouza.com.br>'
 
-  var senderEmail =
-    'nao-responda@' +
-    (clinicSettings
-      ? clinicSettings.getString('resend_domain') || 'andresasouzaclinic.com'
-      : 'andresasouzaclinic.com')
+  if (clinicSettings) {
+    try {
+      if (clinicSettings.getString('clinic_name'))
+        clinicName = clinicSettings.getString('clinic_name')
+      if (clinicSettings.getString('technical_responsible'))
+        techResp = clinicSettings.getString('technical_responsible')
+      if (clinicSettings.getString('professional_register'))
+        profReg = clinicSettings.getString('professional_register')
+      if (clinicSettings.getString('clinic_address'))
+        clinicAddr = clinicSettings.getString('clinic_address')
+      if (clinicSettings.getString('phone')) clinicPhone = clinicSettings.getString('phone')
+      if (clinicSettings.getString('notification_email'))
+        clinicEmail = clinicSettings.getString('notification_email')
+      if (clinicSettings.getString('sender_email'))
+        senderEmail = clinicSettings.getString('sender_email')
+    } catch (_) {}
+  }
 
-  // Gera o PDF da ficha
-  var pdfResult = generatePdfForRecord(formRecord, clinicSettings)
+  // Gera o PDF da ficha usando o mesmo gerador inline em JS puro
+  var pdfResult = (function (rec, settings) {
+    var base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    var base64Lookup = new Uint8Array(256)
+    for (var bIdx = 0; bIdx < base64Chars.length; bIdx++) {
+      base64Lookup[base64Chars.charCodeAt(bIdx)] = bIdx
+    }
+
+    function decodeBase64ToBytes(base64Str) {
+      var clean = base64Str.replace(/[^A-Za-z0-9+/=]/g, '')
+      var len = clean.length
+      var placeHolders = clean.charAt(len - 1) === '=' ? (clean.charAt(len - 2) === '=' ? 2 : 1) : 0
+      var byteLen = Math.floor((len * 3) / 4) - placeHolders
+      var bytes = new Uint8Array(byteLen)
+      var curByte = 0
+      for (var i = 0; i < len; i += 4) {
+        var enc1 = base64Lookup[clean.charCodeAt(i)]
+        var enc2 = base64Lookup[clean.charCodeAt(i + 1)]
+        var enc3 = base64Lookup[clean.charCodeAt(i + 2)]
+        var enc4 = base64Lookup[clean.charCodeAt(i + 3)]
+
+        bytes[curByte++] = (enc1 << 2) | (enc2 >> 4)
+        if (curByte < byteLen) bytes[curByte++] = ((enc2 & 15) << 4) | (enc3 >> 2)
+        if (curByte < byteLen) bytes[curByte++] = ((enc3 & 3) << 6) | enc4
+      }
+      return bytes
+    }
+
+    function encodeBinaryStringToBase64(binStr) {
+      var output = ''
+      var len = binStr.length
+      for (var j = 0; j < len; j += 3) {
+        var b0 = binStr.charCodeAt(j) & 0xff
+        var b1 = j + 1 < len ? binStr.charCodeAt(j + 1) & 0xff : 0
+        var b2 = j + 2 < len ? binStr.charCodeAt(j + 2) & 0xff : 0
+        output += base64Chars.charAt(b0 >> 2)
+        output += base64Chars.charAt(((b0 & 3) << 4) | (b1 >> 4))
+        output += j + 1 < len ? base64Chars.charAt(((b1 & 15) << 2) | (b2 >> 6)) : '='
+        output += j + 2 < len ? base64Chars.charAt(b2 & 63) : '='
+      }
+      return output
+    }
+
+    function tinfUncompress(source) {
+      var TINF_OK = 0
+      var sltree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+      var sdtree = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+      var length_bits = new Uint8Array(30)
+      var length_base = new Uint16Array(30)
+      var dist_bits = new Uint8Array(30)
+      var dist_base = new Uint16Array(30)
+      var clcidx = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+
+      function tinf_build_bits_base(bits, base, delta, first) {
+        var i, sum
+        for (i = 0; i < delta; ++i) bits[i] = 0
+        for (i = 0; i < 30 - delta; ++i) bits[i + delta] = Math.floor(i / delta)
+        for (sum = first, i = 0; i < 30; ++i) {
+          base[i] = sum
+          sum += 1 << bits[i]
+        }
+      }
+
+      function tinf_build_fixed_trees(lt, dt) {
+        var i
+        for (i = 0; i < 7; ++i) lt.table[i] = 0
+        lt.table[7] = 24
+        lt.table[8] = 152
+        lt.table[9] = 112
+        for (i = 0; i < 24; ++i) lt.trans[i] = 256 + i
+        for (i = 0; i < 144; ++i) lt.trans[24 + i] = i
+        for (i = 0; i < 8; ++i) lt.trans[24 + 144 + i] = 280 + i
+        for (i = 0; i < 112; ++i) lt.trans[24 + 144 + 8 + i] = 144 + i
+        for (i = 0; i < 5; ++i) dt.table[i] = 0
+        dt.table[5] = 32
+        for (i = 0; i < 32; ++i) dt.trans[i] = i
+      }
+
+      tinf_build_fixed_trees(sltree, sdtree)
+      tinf_build_bits_base(length_bits, length_base, 4, 3)
+      tinf_build_bits_base(dist_bits, dist_base, 2, 1)
+      length_bits[28] = 0
+      length_base[28] = 258
+
+      function tinf_build_tree(t, lengths, off, num) {
+        var offs = new Uint16Array(16)
+        var i, sum
+        for (i = 0; i < 16; ++i) t.table[i] = 0
+        for (i = 0; i < num; ++i) t.table[lengths[off + i]]++
+        t.table[0] = 0
+        for (sum = 0, i = 0; i < 16; ++i) {
+          offs[i] = sum
+          sum += t.table[i]
+        }
+        for (i = 0; i < num; ++i) {
+          if (lengths[off + i]) t.trans[offs[lengths[off + i]]++] = i
+        }
+      }
+
+      function tinf_get_bit(d) {
+        if (!d.bitcount--) {
+          d.tag = d.source[d.sourceIndex++]
+          d.bitcount = 7
+        }
+        var bit = d.tag & 1
+        d.tag >>>= 1
+        return bit
+      }
+
+      function tinf_read_bits(d, num, base) {
+        if (!num) return base
+        while (d.bitcount < 24) {
+          d.tag |= d.source[d.sourceIndex++] << d.bitcount
+          d.bitcount += 8
+        }
+        var val = d.tag & ((1 << num) - 1)
+        d.tag >>>= num
+        d.bitcount -= num
+        return base + val
+      }
+
+      function tinf_decode_symbol(d, t) {
+        while (d.bitcount < 24) {
+          d.tag |= d.source[d.sourceIndex++] << d.bitcount
+          d.bitcount += 8
+        }
+        var sum = 0,
+          cur = 0,
+          len = 0
+        do {
+          cur = 2 * cur + ((d.tag >>> len) & 1)
+          len++
+          sum += t.table[len]
+          cur -= t.table[len]
+        } while (cur >= 0)
+        d.tag >>>= len
+        d.bitcount -= len
+        return t.trans[sum + cur]
+      }
+
+      function tinf_decode_trees(d, lt, dt) {
+        var code_tree = { table: new Uint16Array(16), trans: new Uint16Array(19) }
+        var lengths = new Uint8Array(288 + 32)
+        var hlit = tinf_read_bits(d, 5, 257)
+        var hdist = tinf_read_bits(d, 5, 1)
+        var hclen = tinf_read_bits(d, 4, 4)
+        for (var i = 0; i < 19; ++i) lengths[i] = 0
+        for (var i = 0; i < hclen; ++i) {
+          var clen = tinf_read_bits(d, 3, 0)
+          lengths[clcidx[i]] = clen
+        }
+        tinf_build_tree(code_tree, lengths, 0, 19)
+        var num = 0
+        while (num < hlit + hdist) {
+          var sym = tinf_decode_symbol(d, code_tree)
+          switch (sym) {
+            case 16:
+              var prev = lengths[num - 1]
+              for (var len = tinf_read_bits(d, 2, 3); len; --len) lengths[num++] = prev
+              break
+            case 17:
+              for (var len = tinf_read_bits(d, 3, 3); len; --len) lengths[num++] = 0
+              break
+            case 18:
+              for (var len = tinf_read_bits(d, 7, 11); len; --len) lengths[num++] = 0
+              break
+            default:
+              lengths[num++] = sym
+              break
+          }
+        }
+        tinf_build_tree(lt, lengths, 0, hlit)
+        tinf_build_tree(dt, lengths, hlit, hdist)
+      }
+
+      function tinf_inflate_block_data(d, lt, dt) {
+        while (1) {
+          var sym = tinf_decode_symbol(d, lt)
+          if (sym === 256) return TINF_OK
+          if (sym < 256) {
+            d.dest.push(sym)
+          } else {
+            sym -= 257
+            var length = tinf_read_bits(d, length_bits[sym], length_base[sym])
+            var dist = tinf_decode_symbol(d, dt)
+            var offset = tinf_read_bits(d, dist_bits[dist], dist_base[dist])
+            for (var i = 0; i < length; ++i) {
+              d.dest.push(d.dest[d.dest.length - offset])
+            }
+          }
+        }
+      }
+
+      function tinf_inflate_uncompressed_block(d) {
+        d.bitcount = 0
+        d.tag = 0
+        var length = d.source[d.sourceIndex] | (d.source[d.sourceIndex + 1] << 8)
+        d.sourceIndex += 4
+        while (length--) d.dest.push(d.source[d.sourceIndex++])
+        return TINF_OK
+      }
+
+      var d = {
+        source: source,
+        sourceIndex: 0,
+        tag: 0,
+        bitcount: 0,
+        dest: [],
+      }
+
+      // Skip zlib header (2 bytes)
+      d.sourceIndex = 2
+
+      var bfinal
+      do {
+        bfinal = tinf_get_bit(d)
+        var btype = tinf_read_bits(d, 2, 0)
+        switch (btype) {
+          case 0:
+            tinf_inflate_uncompressed_block(d)
+            break
+          case 1:
+            tinf_inflate_block_data(d, sltree, sdtree)
+            break
+          case 2:
+            var lt = { table: new Uint16Array(16), trans: new Uint16Array(288) }
+            var dt = { table: new Uint16Array(16), trans: new Uint16Array(32) }
+            tinf_decode_trees(d, lt, dt)
+            tinf_inflate_block_data(d, lt, dt)
+            break
+          default:
+            return null
+        }
+      } while (!bfinal)
+
+      return new Uint8Array(d.dest)
+    }
+
+    function decodePngDataUri(dataUri) {
+      if (!dataUri || dataUri.indexOf('data:image/png;base64,') !== 0) return null
+      var base64 = dataUri.substring('data:image/png;base64,'.length)
+      var bytes = decodeBase64ToBytes(base64)
+      if (bytes.length < 8) return null
+
+      // Check PNG signature: 137 80 78 71 13 10 26 10
+      if (
+        bytes[0] !== 137 ||
+        bytes[1] !== 80 ||
+        bytes[2] !== 78 ||
+        bytes[3] !== 71 ||
+        bytes[4] !== 13 ||
+        bytes[5] !== 10 ||
+        bytes[6] !== 26 ||
+        bytes[7] !== 10
+      ) {
+        return null
+      }
+
+      var offset = 8
+      var width = 0
+      var height = 0
+      var bitDepth = 0
+      var colorType = 0
+      var idatChunks = []
+      var totalIdatLength = 0
+
+      while (offset + 8 <= bytes.length) {
+        var chunkLen =
+          (bytes[offset] << 24) |
+          (bytes[offset + 1] << 16) |
+          (bytes[offset + 2] << 8) |
+          bytes[offset + 3]
+        if (chunkLen < 0) chunkLen = chunkLen >>> 0
+        var chunkType = String.fromCharCode(
+          bytes[offset + 4],
+          bytes[offset + 5],
+          bytes[offset + 6],
+          bytes[offset + 7],
+        )
+        var chunkDataStart = offset + 8
+
+        if (chunkType === 'IHDR') {
+          width =
+            (bytes[chunkDataStart] << 24) |
+            (bytes[chunkDataStart + 1] << 16) |
+            (bytes[chunkDataStart + 2] << 8) |
+            bytes[chunkDataStart + 3]
+          height =
+            (bytes[chunkDataStart + 4] << 24) |
+            (bytes[chunkDataStart + 5] << 16) |
+            (bytes[chunkDataStart + 6] << 8) |
+            bytes[chunkDataStart + 7]
+          bitDepth = bytes[chunkDataStart + 8]
+          colorType = bytes[chunkDataStart + 9]
+        } else if (chunkType === 'IDAT') {
+          var chunkSlice = bytes.subarray(chunkDataStart, chunkDataStart + chunkLen)
+          idatChunks.push(chunkSlice)
+          totalIdatLength += chunkLen
+        } else if (chunkType === 'IEND') {
+          break
+        }
+
+        offset += 12 + chunkLen
+      }
+
+      if (width <= 0 || height <= 0 || idatChunks.length === 0) return null
+      // We only handle standard RGBA (colorType === 6, bitDepth === 8) or RGB (colorType === 2, bitDepth === 8)
+      if (bitDepth !== 8) return null
+      if (colorType !== 6 && colorType !== 2) return null
+
+      // Combine IDAT chunks
+      var combinedIdat = new Uint8Array(totalIdatLength)
+      var idatPos = 0
+      for (var cIdx = 0; cIdx < idatChunks.length; cIdx++) {
+        combinedIdat.set(idatChunks[cIdx], idatPos)
+        idatPos += idatChunks[cIdx].length
+      }
+
+      // Decompress
+      var rawFiltered = tinfUncompress(combinedIdat)
+      if (!rawFiltered) return null
+
+      var bpp = colorType === 6 ? 4 : 3
+      var stride = width * bpp
+      var rgbBuffer = new Uint8Array(width * height * 3)
+      var alphaBuffer = colorType === 6 ? new Uint8Array(width * height) : null
+
+      var inPos = 0
+      var outRgbPos = 0
+      var outAlphaPos = 0
+      var prevRow = new Uint8Array(stride)
+
+      for (var y = 0; y < height; y++) {
+        var filterType = rawFiltered[inPos++]
+        var currentRow = new Uint8Array(stride)
+
+        for (var x = 0; x < stride; x++) {
+          var filtByte = rawFiltered[inPos++]
+          var a = x >= bpp ? currentRow[x - bpp] : 0
+          var b = prevRow[x]
+          var c = x >= bpp ? prevRow[x - bpp] : 0
+          var recon = 0
+
+          switch (filterType) {
+            case 0: // None
+              recon = filtByte
+              break
+            case 1: // Sub
+              recon = (filtByte + a) & 0xff
+              break
+            case 2: // Up
+              recon = (filtByte + b) & 0xff
+              break
+            case 3: // Average
+              recon = (filtByte + Math.floor((a + b) / 2)) & 0xff
+              break
+            case 4: // Paeth
+              var p = a + b - c
+              var pa = Math.abs(p - a)
+              var pb = Math.abs(p - b)
+              var pc = Math.abs(p - c)
+              var pr = 0
+              if (pa <= pb && pa <= pc) pr = a
+              else if (pb <= pc) pr = b
+              else pr = c
+              recon = (filtByte + pr) & 0xff
+              break
+            default:
+              recon = filtByte
+              break
+          }
+          currentRow[x] = recon
+        }
+
+        prevRow.set(currentRow)
+
+        // Extract RGB and Alpha
+        for (var px = 0; px < width; px++) {
+          var pxOffset = px * bpp
+          rgbBuffer[outRgbPos++] = currentRow[pxOffset]
+          rgbBuffer[outRgbPos++] = currentRow[pxOffset + 1]
+          rgbBuffer[outRgbPos++] = currentRow[pxOffset + 2]
+          if (colorType === 6) {
+            alphaBuffer[outAlphaPos++] = currentRow[pxOffset + 3]
+          }
+        }
+      }
+
+      // Convert Uint8Array buffer to binary string
+      function u8ToBin(u8) {
+        var s = ''
+        var chunk = 8192
+        for (var i = 0; i < u8.length; i += chunk) {
+          var sub = u8.subarray(i, Math.min(i + chunk, u8.length))
+          s += String.fromCharCode.apply(null, sub)
+        }
+        return s
+      }
+
+      return {
+        width: width,
+        height: height,
+        rgbBin: u8ToBin(rgbBuffer),
+        alphaBin: alphaBuffer ? u8ToBin(alphaBuffer) : null,
+      }
+    }
+
+    // --- Montagem do PDF ---
+    var PAGE_WIDTH = 595.28
+    var PAGE_HEIGHT = 841.89
+    var MARGIN_LEFT = 40
+    var MARGIN_RIGHT = 40
+    var CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT
+    var MARGIN_TOP = 40
+    var MARGIN_BOTTOM = 40
+
+    var cName = (settings && settings.getString('clinic_name')) || 'Andresa Souza Clinic'
+    var tResp = (settings && settings.getString('technical_responsible')) || 'Andresa Souza'
+    var pReg = (settings && settings.getString('professional_register')) || 'CREFITO-13 000000-F'
+    var cAddr = (settings && settings.getString('clinic_address')) || 'Jardins, Aracaju - SE'
+    var cPhone = (settings && settings.getString('phone')) || '(79) 99980-9134'
+
+    var pName = rec.getString('patient_name') || 'Paciente'
+    var pCpf = rec.getString('patient_cpf') || 'Não informado'
+    var pBirth = rec.getString('patient_birth_date') || 'Não informado'
+    var pEmail = rec.getString('patient_email') || 'Não informado'
+    var pPhone = rec.getString('patient_phone') || 'Não informado'
+    var pOccup = rec.getString('patient_occupation') || 'Não informado'
+    var pAddr = rec.getString('patient_address') || 'Não informado'
+    var pEmergName = rec.getString('emergency_contact_name') || ''
+    var pEmergPhone = rec.getString('emergency_contact_phone') || ''
+
+    var formType = rec.getString('form_type') || 'geral'
+    var formTypeLabels = {
+      geral: 'Anamnese Estética Geral',
+      labios: 'Lábios, Micropigmentação & Revitalização Labial',
+      botox: 'Toxina Botulínica (Botox)',
+    }
+    var formTypeLabel = formTypeLabels[formType] || formType
+
+    var answers = {}
+    try {
+      answers = rec.get('answers') || {}
+    } catch (_) {
+      answers = {}
+    }
+
+    var signedAtIso = rec.getString('signed_at') || rec.getString('created') || ''
+    var docHash = rec.getString('document_hash') || ''
+    var ipAddr = rec.getString('ip_address') || ''
+    var userAgent = rec.getString('user_agent') || ''
+    var signatureData = rec.getString('signature_data') || ''
+
+    // Helper de data BR
+    function formatIsoToBR(isoStr) {
+      if (!isoStr) return 'Não informado'
+      try {
+        var d = new Date(isoStr)
+        var utc = d.getTime() + d.getTimezoneOffset() * 60000
+        var br = new Date(utc - 3 * 3600000)
+        var dd = String(br.getDate())
+        if (dd.length < 2) dd = '0' + dd
+        var mm = String(br.getMonth() + 1)
+        if (mm.length < 2) mm = '0' + mm
+        var yyyy = br.getFullYear()
+        var hh = String(br.getHours())
+        if (hh.length < 2) hh = '0' + hh
+        var mi = String(br.getMinutes())
+        if (mi.length < 2) mi = '0' + mi
+        return dd + '/' + mm + '/' + yyyy + ' às ' + hh + ':' + mi
+      } catch (_) {
+        return isoStr
+      }
+    }
+
+    function formatBirthDateBR(dateStr) {
+      if (!dateStr || dateStr === 'Não informado') return 'Não informado'
+      try {
+        var clean = String(dateStr).trim().split('T')[0]
+        var match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+        if (match) {
+          return match[3] + '/' + match[2] + '/' + match[1]
+        }
+        return dateStr
+      } catch (_) {
+        return dateStr
+      }
+    }
+
+    var signedAtBr = formatIsoToBR(signedAtIso)
+    var patientBirthBr = formatBirthDateBR(pBirth)
+
+    // Escape texto para sintaxe literal de string do PDF: (...)
+    function pdfEscape(str) {
+      if (!str) return ''
+      var s = String(str)
+      // Normalização de caracteres para WinAnsiEncoding / PDFDocEncoding
+      s = s
+        .replace(/[áàâãä]/g, 'a')
+        .replace(/[ÁÀÂÃÄ]/g, 'A')
+        .replace(/[éèêë]/g, 'e')
+        .replace(/[ÉÈÊË]/g, 'E')
+        .replace(/[íìîï]/g, 'i')
+        .replace(/[ÍÌÎÏ]/g, 'I')
+        .replace(/[óòôõö]/g, 'o')
+        .replace(/[ÓÒÔÕÖ]/g, 'O')
+        .replace(/[úùûü]/g, 'u')
+        .replace(/[ÚÙÛÜ]/g, 'U')
+        .replace(/[ç]/g, 'c')
+        .replace(/[Ç]/g, 'C')
+        .replace(/[ñ]/g, 'n')
+        .replace(/[Ñ]/g, 'N')
+        .replace(/—/g, '-')
+        .replace(/–/g, '-')
+        .replace(/•/g, '-')
+        .replace(/“|”/g, '"')
+        .replace(/‘|’/g, "'")
+      return s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+    }
+
+    function wrapText(text, maxChars) {
+      if (!text) return []
+      var words = String(text).split(' ')
+      var lines = []
+      var cur = ''
+      for (var w = 0; w < words.length; w++) {
+        var word = words[w]
+        if (!cur) {
+          cur = word
+        } else if (cur.length + 1 + word.length <= maxChars) {
+          cur += ' ' + word
+        } else {
+          lines.push(cur)
+          cur = word
+        }
+      }
+      if (cur) lines.push(cur)
+      return lines
+    }
+
+    // Processamento de PNG de assinatura se houver
+    var sigPng = null
+    try {
+      sigPng = decodePngDataUri(signatureData)
+    } catch (_) {
+      sigPng = null
+    }
+
+    // Estrutura de páginas do PDF
+    var pages = []
+    var curOps = []
+    var curY = PAGE_HEIGHT - MARGIN_TOP
+
+    function startNewPage() {
+      if (curOps.length > 0) {
+        pages.push(curOps)
+        curOps = []
+      }
+      curY = PAGE_HEIGHT - MARGIN_TOP
+
+      // Top banner
+      curOps.push('q')
+      curOps.push('0.514 0.094 0.263 rg') // #831843
+      curOps.push('0 ' + (PAGE_HEIGHT - 12) + ' ' + PAGE_WIDTH + ' 12 re f')
+      curOps.push('Q')
+
+      // Header
+      curOps.push('BT')
+      curOps.push('/F2 14 Tf')
+      curOps.push('0.514 0.094 0.263 rg')
+      curOps.push(MARGIN_LEFT + ' ' + (curY - 14) + ' Td')
+      curOps.push('(' + pdfEscape(cName) + ') Tj')
+      curOps.push('ET')
+
+      curOps.push('BT')
+      curOps.push('/F1 8 Tf')
+      curOps.push('0.4 0.4 0.4 rg')
+      curOps.push(MARGIN_LEFT + ' ' + (curY - 26) + ' Td')
+      curOps.push(
+        '(' + pdfEscape(tResp + ' | ' + pReg + ' | ' + cAddr + ' | Tel: ' + cPhone) + ') Tj',
+      )
+      curOps.push('ET')
+
+      // Linha divisória
+      curOps.push('q')
+      curOps.push('0.85 0.85 0.85 RG 0.5 w')
+      curOps.push(
+        MARGIN_LEFT +
+          ' ' +
+          (curY - 34) +
+          ' m ' +
+          (PAGE_WIDTH - MARGIN_RIGHT) +
+          ' ' +
+          (curY - 34) +
+          ' l S',
+      )
+      curOps.push('Q')
+
+      curY = curY - 48
+    }
+
+    function ensureSpace(needed) {
+      if (curY - needed < MARGIN_BOTTOM + 20) {
+        startNewPage()
+      }
+    }
+
+    // Inicia a primeira página
+    startNewPage()
+
+    // Título do documento
+    ensureSpace(32)
+    curOps.push('BT')
+    curOps.push('/F2 13 Tf')
+    curOps.push('0.1 0.1 0.1 rg')
+    curOps.push(MARGIN_LEFT + ' ' + (curY - 13) + ' Td')
+    curOps.push('(FICHA DE ANAMNESE E TERMO DE CONSENTIMENTO) Tj')
+    curOps.push('ET')
+
+    curOps.push('BT')
+    curOps.push('/F2 10 Tf')
+    curOps.push('0.514 0.094 0.263 rg')
+    curOps.push(MARGIN_LEFT + ' ' + (curY - 26) + ' Td')
+    curOps.push('(' + pdfEscape(formTypeLabel) + ') Tj')
+    curOps.push('ET')
+    curY -= 36
+
+    // Bloco de Dados do Paciente
+    function drawSectionTitle(title) {
+      ensureSpace(24)
+      curOps.push('q')
+      curOps.push('0.96 0.94 0.95 rg')
+      curOps.push(MARGIN_LEFT + ' ' + (curY - 18) + ' ' + CONTENT_WIDTH + ' 18 re f')
+      curOps.push('0.514 0.094 0.263 rg')
+      curOps.push(MARGIN_LEFT + ' ' + (curY - 18) + ' 3 18 re f')
+      curOps.push('Q')
+
+      curOps.push('BT')
+      curOps.push('/F2 9 Tf')
+      curOps.push('0.514 0.094 0.263 rg')
+      curOps.push(MARGIN_LEFT + 8 + ' ' + (curY - 13) + ' Td')
+      curOps.push('(' + pdfEscape(title.toUpperCase()) + ') Tj')
+      curOps.push('ET')
+      curY -= 24
+    }
+
+    function drawFieldRow(label, value) {
+      ensureSpace(14)
+      var valStr = pdfEscape(value || '-')
+      var lines = wrapText(valStr, 65)
+      if (lines.length === 0) lines = ['-']
+
+      curOps.push('BT')
+      curOps.push('/F2 8 Tf')
+      curOps.push('0.2 0.2 0.2 rg')
+      curOps.push(MARGIN_LEFT + ' ' + (curY - 9) + ' Td')
+      curOps.push('(' + pdfEscape(label) + ':) Tj')
+      curOps.push('ET')
+
+      var valueX = MARGIN_LEFT + 140
+      for (var l = 0; l < lines.length; l++) {
+        if (l > 0) ensureSpace(12)
+        curOps.push('BT')
+        curOps.push('/F1 8 Tf')
+        curOps.push('0.1 0.1 0.1 rg')
+        curOps.push(valueX + ' ' + (curY - 9) + ' Td')
+        curOps.push('(' + lines[l] + ') Tj')
+        curOps.push('ET')
+        curY -= 12
+      }
+    }
+
+    drawSectionTitle('1. Identificação do(a) Paciente')
+    drawFieldRow('Nome Completo', pName)
+    drawFieldRow('CPF', pCpf)
+    drawFieldRow('Data de Nascimento', patientBirthBr)
+    drawFieldRow('E-mail', pEmail)
+    drawFieldRow('Telefone / WhatsApp', pPhone)
+    drawFieldRow('Profissão', pOccup)
+    drawFieldRow('Endereço', pAddr)
+    if (pEmergName || pEmergPhone) {
+      drawFieldRow(
+        'Contato de Emergência',
+        pEmergName + ' ' + (pEmergPhone ? '(' + pEmergPhone + ')' : ''),
+      )
+    }
+    curY -= 6
+
+    // Seção Anamnese / Perguntas
+    drawSectionTitle('2. Histórico de Saúde e Anamnese')
+    var answersCount = 0
+    for (var aKey in answers) {
+      if (Object.prototype.hasOwnProperty.call(answers, aKey)) {
+        answersCount++
+        var aVal = answers[aKey]
+        var valDisplay = ''
+        if (typeof aVal === 'boolean') {
+          valDisplay = aVal ? 'SIM' : 'NÃO'
+        } else if (typeof aVal === 'object' && aVal !== null) {
+          if (aVal.value !== undefined) {
+            valDisplay = aVal.value ? 'SIM' : 'NÃO'
+            if (aVal.details) valDisplay += ' — ' + aVal.details
+          } else {
+            valDisplay = JSON.stringify(aVal)
+          }
+        } else {
+          valDisplay = String(aVal)
+        }
+
+        // Título amigável da pergunta
+        var labelDisplay = aKey.replace(/_/g, ' ').replace(/\b\w/g, function (l) {
+          return l.toUpperCase()
+        })
+
+        drawFieldRow(labelDisplay, valDisplay)
+      }
+    }
+    if (answersCount === 0) {
+      drawFieldRow('Respostas', 'Nenhuma resposta específica registrada.')
+    }
+    curY -= 6
+
+    // Seção Termo de Consentimento
+    drawSectionTitle('3. Termo de Consentimento Livre e Esclarecido')
+    var consentText =
+      'Declaro que li, compreendi e concordo integralmente com todas as orientacoes, ' +
+      'possiveis riscos, cuidados pre e pos-procedimento apresentados nesta data. ' +
+      'Afirmo que todas as informacoes fornecidas por mim sao verdadeiras, completas e de minha ' +
+      'inteira responsabilidade. Autorizo a realizacao do procedimento acima descrito e a manutencao ' +
+      'deste registro eletronico para todos os fins legais e de saude.'
+    var consentLines = wrapText(pdfEscape(consentText), 92)
+    for (var cL = 0; cL < consentLines.length; cL++) {
+      ensureSpace(12)
+      curOps.push('BT')
+      curOps.push('/F1 8 Tf')
+      curOps.push('0.25 0.25 0.25 rg')
+      curOps.push(MARGIN_LEFT + ' ' + (curY - 9) + ' Td')
+      curOps.push('(' + consentLines[cL] + ') Tj')
+      curOps.push('ET')
+      curY -= 11
+    }
+    curY -= 8
+
+    // Bloco de Assinatura e Trilha
+    drawSectionTitle('4. Assinatura Digital e Trilha de Autenticidade')
+
+    ensureSpace(110)
+    // Caixa de assinatura
+    var sigBoxHeight = 80
+    var sigBoxY = curY - sigBoxHeight
+    curOps.push('q')
+    curOps.push('0.97 0.97 0.98 rg 0.85 0.85 0.88 RG 0.5 w')
+    curOps.push(
+      MARGIN_LEFT + ' ' + sigBoxY + ' ' + (CONTENT_WIDTH / 2 - 10) + ' ' + sigBoxHeight + ' re B',
+    )
+    curOps.push('Q')
+
+    // Se houver PNG de assinatura, desenha a imagem
+    if (sigPng) {
+      var sigImgWidth = CONTENT_WIDTH / 2 - 30
+      var sigImgHeight = Math.min(50, (sigImgWidth / sigPng.width) * sigPng.height)
+      var sigImgX = MARGIN_LEFT + 10
+      var sigImgY = sigBoxY + 18
+      curOps.push('q')
+      curOps.push(sigImgWidth + ' 0 0 ' + sigImgHeight + ' ' + sigImgX + ' ' + sigImgY + ' cm')
+      curOps.push('/ImSig Do')
+      curOps.push('Q')
+    } else {
+      curOps.push('BT')
+      curOps.push('/F2 10 Tf')
+      curOps.push('0.514 0.094 0.263 rg')
+      curOps.push(MARGIN_LEFT + 15 + ' ' + (sigBoxY + 40) + ' Td')
+      curOps.push('(ASSINADO ELETRONICAMENTE) Tj')
+      curOps.push('ET')
+    }
+
+    curOps.push('BT')
+    curOps.push('/F2 8 Tf')
+    curOps.push('0.2 0.2 0.2 rg')
+    curOps.push(MARGIN_LEFT + 10 + ' ' + (sigBoxY + 6) + ' Td')
+    curOps.push('(' + pdfEscape(pName) + ' — CPF ' + pdfEscape(pCpf) + ') Tj')
+    curOps.push('ET')
+
+    // Dados de autenticidade ao lado direito
+    var authX = MARGIN_LEFT + CONTENT_WIDTH / 2 + 10
+    var authY = curY - 12
+
+    function drawAuthLine(k, v) {
+      curOps.push('BT')
+      curOps.push('/F2 7 Tf')
+      curOps.push('0.3 0.3 0.3 rg')
+      curOps.push(authX + ' ' + authY + ' Td')
+      curOps.push('(' + pdfEscape(k) + ':) Tj')
+      curOps.push('ET')
+
+      var vLines = wrapText(pdfEscape(v), 34)
+      for (var vl = 0; vl < vLines.length; vl++) {
+        curOps.push('BT')
+        curOps.push('/F1 7 Tf')
+        curOps.push('0.1 0.1 0.1 rg')
+        curOps.push(authX + 65 + ' ' + authY + ' Td')
+        curOps.push('(' + vLines[vl] + ') Tj')
+        curOps.push('ET')
+        authY -= 10
+      }
+    }
+
+    drawAuthLine('Data/Hora', signedAtBr)
+    drawAuthLine('IP Origem', ipAddr || 'Registrado via Web')
+    drawAuthLine('Dispositivo', userAgent ? userAgent.substring(0, 40) : 'Navegador Web/Mobile')
+    drawAuthLine('Hash SHA-256', docHash ? docHash.substring(0, 32) + '...' : 'SHA-256 REGISTRADO')
+    drawAuthLine('Integridade', 'Encadeamento Criptografico')
+
+    curY = sigBoxY - 14
+
+    // Rodapé de validade jurídica
+    ensureSpace(30)
+    curOps.push('BT')
+    curOps.push('/F1 7 Tf')
+    curOps.push('0.4 0.4 0.4 rg')
+    curOps.push(MARGIN_LEFT + ' ' + (curY - 8) + ' Td')
+    curOps.push(
+      '(Documento assinado digitalmente em conformidade com a MP 2.200-2/2001 e Lei 14.063/2020.) Tj',
+    )
+    curOps.push('ET')
+
+    curOps.push('BT')
+    curOps.push('/F1 7 Tf')
+    curOps.push('0.4 0.4 0.4 rg')
+    curOps.push(MARGIN_LEFT + ' ' + (curY - 18) + ' Td')
+    curOps.push(
+      '(A integridade deste documento e protegida por hash criptografico e trilha de auditoria imutavel.) Tj',
+    )
+    curOps.push('ET')
+
+    // Salva última página
+    if (curOps.length > 0) {
+      pages.push(curOps)
+    }
+
+    var totalPages = pages.length
+
+    // --- MONTAGEM DOS OBJETOS DO PDF ---
+    // Estrutura de objetos:
+    // 1: Catalog
+    // 2: Pages
+    // 3: Font F1 (Helvetica)
+    // 4: Font F2 (Helvetica-Bold)
+    // Se tiver imagem de assinatura:
+    // 5: XObject Image
+    // 6: XObject SoftMask (Alpha) se houver
+    // Depois, para cada página i:
+    // PageObj: 2 * i + offset
+    // ContentStreamObj: 2 * i + offset + 1
+
+    var pdfParts = []
+    var offsets = [0] // 1-indexed
+
+    function appendObj(contentStr) {
+      var currentOffset = pdfParts.join('').length
+      offsets.push(currentOffset)
+      pdfParts.push(contentStr)
+    }
+
+    pdfParts.push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
+
+    var sigObjIdx = 0
+    var maskObjIdx = 0
+    var nextFreeObj = 5
+
+    if (sigPng) {
+      sigObjIdx = nextFreeObj++
+      if (sigPng.alphaBin) {
+        maskObjIdx = nextFreeObj++
+      }
+    }
+
+    var pageObjIndices = []
+    var contentObjIndices = []
+    for (var p = 0; p < totalPages; p++) {
+      pageObjIndices.push(nextFreeObj++)
+      contentObjIndices.push(nextFreeObj++)
+    }
+
+    // Obj 1: Catalog
+    appendObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
+
+    // Obj 2: Pages
+    var kidsStr = pageObjIndices
+      .map(function (idx) {
+        return idx + ' 0 R'
+      })
+      .join(' ')
+    appendObj(
+      '2 0 obj\n<< /Type /Pages /Kids [' + kidsStr + '] /Count ' + totalPages + ' >>\nendobj\n',
+    )
+
+    // Obj 3: Font F1
+    appendObj(
+      '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n',
+    )
+
+    // Obj 4: Font F2
+    appendObj(
+      '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj\n',
+    )
+
+    // Imagem se houver
+    if (sigPng) {
+      var imgHeader =
+        sigObjIdx +
+        ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' +
+        sigPng.width +
+        ' /Height ' +
+        sigPng.height +
+        ' /ColorSpace /DeviceRGB /BitsPerComponent 8 ' +
+        (maskObjIdx ? '/SMask ' + maskObjIdx + ' 0 R ' : '') +
+        '/Length ' +
+        sigPng.rgbBin.length +
+        ' >>\nstream\n'
+      appendObj(imgHeader + sigPng.rgbBin + '\nendstream\nendobj\n')
+
+      if (maskObjIdx) {
+        var maskHeader =
+          maskObjIdx +
+          ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' +
+          sigPng.width +
+          ' /Height ' +
+          sigPng.height +
+          ' /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ' +
+          sigPng.alphaBin.length +
+          ' >>\nstream\n'
+        appendObj(maskHeader + sigPng.alphaBin + '\nendstream\nendobj\n')
+      }
+    }
+
+    // Cada página e seu stream
+    for (var pg = 0; pg < totalPages; pg++) {
+      var pObjId = pageObjIndices[pg]
+      var cObjId = contentObjIndices[pg]
+
+      // Adiciona numeração de página no rodapé da página
+      var pageNumText = 'Pagina ' + (pg + 1) + ' de ' + totalPages
+      pages[pg].push('BT')
+      pages[pg].push('/F1 7 Tf')
+      pages[pg].push('0.5 0.5 0.5 rg')
+      pages[pg].push(PAGE_WIDTH - MARGIN_RIGHT - 60 + ' ' + (MARGIN_BOTTOM - 15) + ' Td')
+      pages[pg].push('(' + pageNumText + ') Tj')
+      pages[pg].push('ET')
+
+      var streamContent = pages[pg].join('\n') + '\n'
+
+      // Page Obj
+      var xobjRes = sigPng ? ' /XObject << /ImSig ' + sigObjIdx + ' 0 R >>' : ''
+      var pageHeader =
+        pObjId +
+        ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' +
+        PAGE_WIDTH +
+        ' ' +
+        PAGE_HEIGHT +
+        '] ' +
+        '/Resources << /Font << /F1 3 0 R /F2 4 0 R >>' +
+        xobjRes +
+        ' >> ' +
+        '/Contents ' +
+        cObjId +
+        ' 0 R >>\nendobj\n'
+      appendObj(pageHeader)
+
+      // Content Stream Obj
+      var contentHeader = cObjId + ' 0 obj\n<< /Length ' + streamContent.length + ' >>\nstream\n'
+      appendObj(contentHeader + streamContent + 'endstream\nendobj\n')
+    }
+
+    // XREF
+    var xrefOffset = pdfParts.join('').length
+    var totalObjects = nextFreeObj - 1
+    var xrefStr = 'xref\n0 ' + (totalObjects + 1) + '\n0000000000 65535 f \n'
+
+    for (var objI = 1; objI <= totalObjects; objI++) {
+      var off = String(offsets[objI])
+      while (off.length < 10) off = '0' + off
+      xrefStr += off + ' 00000 n \n'
+    }
+
+    xrefStr +=
+      'trailer\n<< /Size ' +
+      (totalObjects + 1) +
+      ' /Root 1 0 R >>\nstartxref\n' +
+      xrefOffset +
+      '\n%%EOF\n'
+
+    pdfParts.push(xrefStr)
+
+    var rawPdf = pdfParts.join('')
+    var pdfBase64 = encodeBinaryStringToBase64(rawPdf)
+
+    return {
+      rawPdf: rawPdf,
+      base64: pdfBase64,
+      size: rawPdf.length,
+      pages: totalPages,
+    }
+  })(formRecord, clinicSettings)
+
   if (!pdfResult || !pdfResult.base64) {
     return e.json(500, { error: 'Não foi possível renderizar o PDF da ficha' })
   }
@@ -2578,6 +3584,22 @@ routerAdd('POST', '/backend/v1/forms/send-audit-proof', (e) => {
     formatBr(new Date().toISOString()) +
     '.\n' +
     '=================================================================\n'
+
+  function encodeBinaryStringToBase64(binStr) {
+    var base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    var output = ''
+    var len = binStr.length
+    for (var j = 0; j < len; j += 3) {
+      var b0 = binStr.charCodeAt(j) & 0xff
+      var b1 = j + 1 < len ? binStr.charCodeAt(j + 1) & 0xff : 0
+      var b2 = j + 2 < len ? binStr.charCodeAt(j + 2) & 0xff : 0
+      output += base64Chars.charAt(b0 >> 2)
+      output += base64Chars.charAt(((b0 & 3) << 4) | (b1 >> 4))
+      output += j + 1 < len ? base64Chars.charAt(((b1 & 15) << 2) | (b2 >> 6)) : '='
+      output += j + 2 < len ? base64Chars.charAt(b2 & 63) : '='
+    }
+    return output
+  }
 
   var auditBase64 = encodeBinaryStringToBase64(auditReportText)
   var auditFilename = 'Trilha-Auditoria-' + nomeSanitizado + '-' + dataCurta + '.txt'
