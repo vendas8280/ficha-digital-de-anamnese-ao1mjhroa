@@ -85,6 +85,10 @@ export default function DashboardPage() {
   const [openNewLinkDialog, setOpenNewLinkDialog] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [resendingId, setResendingId] = useState<string | null>(null)
+  const [sendingAuditProofId, setSendingAuditProofId] = useState<string | null>(null)
+  const [auditProofConfirmForm, setAuditProofConfirmForm] = useState<FormSubmissionRecord | null>(
+    null,
+  )
   const [retryingReminderId, setRetryingReminderId] = useState<string | null>(null)
   const [drawerActionForm, setDrawerActionForm] = useState<FormSubmissionRecord | null>(null)
 
@@ -271,6 +275,33 @@ export default function DashboardPage() {
       })
     } finally {
       setResendingId(null)
+    }
+  }
+
+  const handleSendAuditProofConfirmed = async () => {
+    if (!auditProofConfirmForm) return
+    const id = auditProofConfirmForm.id
+    setAuditProofConfirmForm(null)
+    setSendingAuditProofId(id)
+    try {
+      const res = await formsService.sendAuditProofEmail(id)
+      toast({
+        title: 'Comprovante completo enviado.',
+        description:
+          res?.message ||
+          'Comprovante completo com o PDF da ficha e a trilha de auditoria enviado com sucesso à paciente.',
+      })
+      loadForms()
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'Não foi possível enviar o comprovante completo.'
+      toast({
+        title: 'Erro ao enviar comprovante completo',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setSendingAuditProofId(null)
     }
   }
 
@@ -548,8 +579,10 @@ export default function DashboardPage() {
                 copiedId={copiedId}
                 resendingId={resendingId}
                 retryingReminderId={retryingReminderId}
+                sendingAuditProofId={sendingAuditProofId}
                 onCopyLink={copyToClipboard}
                 onResendEmail={handleResendEmail}
+                onSendAuditProof={setAuditProofConfirmForm}
                 onRetryReminder={handleRetryReminder}
                 onOpenDelete={setFormToDelete}
               />
@@ -667,6 +700,29 @@ export default function DashboardPage() {
                       </button>
                     )}
 
+                    {/* Enviar comprovante completo (com trilha) */}
+                    {isSigned && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetForm = item
+                          setDrawerActionForm(null)
+                          setAuditProofConfirmForm(targetForm)
+                        }}
+                        disabled={sendingAuditProofId === item.id}
+                        className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-[#6B3FA0] hover:bg-purple-50 active:bg-purple-100 transition-colors text-left w-full"
+                      >
+                        {sendingAuditProofId === item.id ? (
+                          <Loader2 className="w-5 h-5 animate-spin shrink-0" />
+                        ) : (
+                          <Send className="w-5 h-5 shrink-0" />
+                        )}
+                        <span className="font-medium">
+                          Enviar comprovante completo (com trilha)
+                        </span>
+                      </button>
+                    )}
+
                     {/* Reenviar lembrete */}
                     {itemAppointment && (
                       <button
@@ -719,6 +775,46 @@ export default function DashboardPage() {
             })()}
         </DrawerContent>
       </Drawer>
+
+      {/* Modal de confirmação de envio de comprovante completo (com trilha) */}
+      <AlertDialog
+        open={!!auditProofConfirmForm}
+        onOpenChange={(open) => {
+          if (!open) setAuditProofConfirmForm(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-slate-900">
+              Enviar comprovante completo (com trilha)
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600 space-y-2">
+              <span>
+                Enviar à paciente{' '}
+                <strong>{auditProofConfirmForm?.patient_name || 'paciente'}</strong> o comprovante
+                completo com a trilha de auditoria anexada?
+              </span>
+              <span className="block text-slate-500 text-[11px]">
+                A paciente receberá no e-mail{' '}
+                <strong className="text-slate-700 font-mono">
+                  {auditProofConfirmForm?.patient_email || 'cadastrado'}
+                </strong>{' '}
+                o PDF oficial da ficha e o arquivo de auditoria cronológica detalhado com
+                encadeamento criptográfico SHA-256.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSendAuditProofConfirmed}
+              className="bg-[#6B3FA0] hover:bg-[#583385] text-white text-xs"
+            >
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal de confirmação de exclusão */}
       <AlertDialog

@@ -16,8 +16,10 @@ interface FichaTableProps {
   copiedId: string | null
   resendingId: string | null
   retryingReminderId: string | null
+  sendingAuditProofId?: string | null
   onCopyLink: (url: string, id: string) => void
   onResendEmail: (id: string) => void
+  onSendAuditProof?: (form: FormSubmissionRecord) => void
   onRetryReminder: (appointmentId: string) => void
   onOpenDelete: (form: FormSubmissionRecord) => void
 }
@@ -28,8 +30,10 @@ export const FichaTable: React.FC<FichaTableProps> = ({
   copiedId,
   resendingId,
   retryingReminderId,
+  sendingAuditProofId,
   onCopyLink,
   onResendEmail,
+  onSendAuditProof,
   onRetryReminder,
   onOpenDelete,
 }) => {
@@ -238,8 +242,10 @@ export const FichaTable: React.FC<FichaTableProps> = ({
                       copiedId={copiedId}
                       resendingId={resendingId}
                       retryingReminderId={retryingReminderId}
+                      sendingAuditProofId={sendingAuditProofId}
                       onCopyLink={onCopyLink}
                       onResendEmail={onResendEmail}
+                      onSendAuditProof={onSendAuditProof}
                       onRetryReminder={onRetryReminder}
                       onOpenDelete={onOpenDelete}
                     />

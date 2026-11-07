@@ -27,7 +27,18 @@ import {
   Loader2,
   Copy,
   Check,
+  Send,
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 
 export default function FormDetailPage() {
@@ -40,6 +51,8 @@ export default function FormDetailPage() {
   const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [resendingEmail, setResendingEmail] = useState(false)
+  const [sendingAuditProof, setSendingAuditProof] = useState(false)
+  const [confirmAuditProofOpen, setConfirmAuditProofOpen] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
 
   // Redirect if not logged in
@@ -96,6 +109,30 @@ export default function FormDetailPage() {
       })
     } finally {
       setResendingEmail(false)
+    }
+  }
+
+  const handleSendAuditProof = async () => {
+    if (!form) return
+    setConfirmAuditProofOpen(false)
+    setSendingAuditProof(true)
+    try {
+      const res = await formsService.sendAuditProofEmail(form.id)
+      toast({
+        title: 'Comprovante completo enviado.',
+        description:
+          res.message ||
+          'Comprovante completo com o PDF da ficha e a trilha de auditoria enviado com sucesso à paciente.',
+      })
+      loadForm()
+    } catch (err: unknown) {
+      toast({
+        title: 'Erro ao enviar comprovante completo',
+        description: err instanceof Error ? err.message : 'Falha ao enviar comprovante com trilha.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSendingAuditProof(false)
     }
   }
 
@@ -164,6 +201,21 @@ export default function FormDetailPage() {
           <div className="flex items-center gap-2">
             {form.status === 'preenchida' && (
               <>
+                <Button
+                  onClick={() => setConfirmAuditProofOpen(true)}
+                  disabled={sendingAuditProof}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-9 px-3 border-purple-300 text-[#6B3FA0] hover:bg-purple-50 rounded-md font-medium shadow-sm transition-colors gap-1.5"
+                >
+                  {sendingAuditProof ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  Enviar comprovante completo (com trilha)
+                </Button>
+
                 <Button
                   onClick={async () => {
                     printFormPDF(form)
@@ -461,6 +513,40 @@ export default function FormDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Modal de confirmação para envio de comprovante completo (com trilha) */}
+        <AlertDialog open={confirmAuditProofOpen} onOpenChange={setConfirmAuditProofOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-slate-900">
+                Enviar comprovante completo (com trilha)
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs text-slate-600 space-y-2">
+                <span>
+                  Enviar à paciente <strong>{form.patient_name || 'paciente'}</strong> o comprovante
+                  completo com a trilha de auditoria anexada?
+                </span>
+                <span className="block text-slate-500 text-[11px]">
+                  A paciente receberá no e-mail{' '}
+                  <strong className="text-slate-700 font-mono">
+                    {form.patient_email || 'cadastrado'}
+                  </strong>{' '}
+                  o PDF oficial da ficha e o arquivo de auditoria cronológica detalhado com
+                  encadeamento criptográfico SHA-256.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="text-xs">Voltar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleSendAuditProof}
+                className="bg-[#6B3FA0] hover:bg-[#583385] text-white text-xs"
+              >
+                Confirmar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* 4. Term of Consent & Digital Signature */}
         {form.status === 'preenchida' && (

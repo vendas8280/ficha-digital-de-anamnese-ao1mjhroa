@@ -294,6 +294,25 @@ export const formsService = {
     }
   },
 
+  // Enviar comprovante completo com trilha de auditoria anexada
+  async sendAuditProofEmail(idOrToken: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await pb.send('/backend/v1/forms/send-audit-proof', {
+        method: 'POST',
+        body: {
+          id: idOrToken,
+          form_submission_id: idOrToken,
+          token: idOrToken,
+        },
+      })
+      return res as { success: boolean; message?: string }
+    } catch (err: unknown) {
+      throw new Error(
+        err instanceof Error ? err.message : 'Falha ao enviar comprovante completo com trilha',
+      )
+    }
+  },
+
   // Delete form (clinic only)
   async deleteForm(id: string): Promise<boolean> {
     return await pb.collection('form_submissions').delete(id)

@@ -26,8 +26,10 @@ interface FichaActionsMenuProps {
   copiedId: string | null
   resendingId: string | null
   retryingReminderId: string | null
+  sendingAuditProofId?: string | null
   onCopyLink: (url: string, id: string) => void
   onResendEmail: (id: string) => void
+  onSendAuditProof?: (form: FormSubmissionRecord) => void
   onRetryReminder: (appointmentId: string) => void
   onOpenDelete: (form: FormSubmissionRecord) => void
 }
@@ -38,8 +40,10 @@ export const FichaActionsMenu: React.FC<FichaActionsMenuProps> = ({
   copiedId,
   resendingId,
   retryingReminderId,
+  sendingAuditProofId,
   onCopyLink,
   onResendEmail,
+  onSendAuditProof,
   onRetryReminder,
   onOpenDelete,
 }) => {
@@ -108,6 +112,22 @@ export const FichaActionsMenu: React.FC<FichaActionsMenuProps> = ({
               <Send className="w-3.5 h-3.5" />
             )}
             <span>Reenviar comprovante por e-mail</span>
+          </DropdownMenuItem>
+        )}
+
+        {/* Enviar comprovante completo (com trilha) */}
+        {isSigned && onSendAuditProof && (
+          <DropdownMenuItem
+            onClick={() => onSendAuditProof(form)}
+            disabled={sendingAuditProofId === form.id}
+            className="cursor-pointer flex items-center gap-2 text-[#6B3FA0] focus:text-[#583385]"
+          >
+            {sendingAuditProofId === form.id ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+            <span>Enviar comprovante completo (com trilha)</span>
           </DropdownMenuItem>
         )}
 

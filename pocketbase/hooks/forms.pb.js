@@ -2341,15 +2341,23 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
  */
 routerAdd('POST', '/backend/v1/forms/send-audit-proof', (e) => {
   var data = e.requestInfo().body || {}
-  var formId = data.id
+  var formId = data.id || data.form_submission_id || data.form_id || ''
+  var token = data.token || ''
 
-  if (!formId) {
-    return e.json(400, { error: 'ID da ficha é obrigatório' })
+  if (!formId && !token) {
+    return e.json(400, { error: 'ID ou token da ficha é obrigatório' })
   }
 
-  var formRecord
+  var formRecord = null
   try {
-    formRecord = $app.findRecordById('form_submissions', formId)
+    if (formId) {
+      formRecord = $app.findRecordById('form_submissions', formId)
+    } else if (token) {
+      var forms = $app.findRecordsByFilter('form_submissions', 'token = {:token}', '', 1, 0, {
+        token: token,
+      })
+      if (forms && forms.length > 0) formRecord = forms[0]
+    }
   } catch (err) {
     return e.json(404, { error: 'Ficha não encontrada: ' + err.message })
   }
