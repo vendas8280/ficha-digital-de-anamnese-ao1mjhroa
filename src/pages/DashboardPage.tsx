@@ -32,6 +32,15 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -149,6 +158,8 @@ export default function DashboardPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [resendingId, setResendingId] = useState<string | null>(null)
   const [retryingReminderId, setRetryingReminderId] = useState<string | null>(null)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(() => new Date())
+  const [drawerActionForm, setDrawerActionForm] = useState<FormSubmissionRecord | null>(null)
 
   // Agendamento opcional (seção do gerador de ficha)
   const [showScheduling, setShowScheduling] = useState(false)
@@ -188,6 +199,7 @@ export default function DashboardPage() {
         .listAllReminders()
         .then(setReminders)
         .catch(() => setReminders([]))
+      setLastRefreshedAt(new Date())
     } catch {
       toast({
         title: 'Erro ao carregar fichas',
@@ -577,6 +589,17 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
+                {/* No celular, mostra a data de última atualização em texto pequeno abaixo do cartão com ícone de relógio */}
+                <div className="md:hidden mt-2 pt-2 border-t border-amber-100 flex items-center gap-1 text-[10px] text-amber-700/80">
+                  <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                  <span>
+                    Última atualização: {formatDateBR(lastRefreshedAt.toISOString())} às{' '}
+                    {lastRefreshedAt.toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
               </CardContent>
             </Card>
 
@@ -783,30 +806,44 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Botão Atualizar vira apenas Ícone com tooltip */}
-            <TooltipProvider delayDuration={150}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={loadForms}
-                    disabled={loading}
-                    className="h-9 w-9 border-slate-200 text-slate-700 hover:bg-slate-50 shrink-0"
-                    aria-label="Atualizar dados do painel"
-                  >
-                    <RefreshCw
-                      className={`w-4 h-4 ${loading ? 'animate-spin text-[#6B3FA0]' : ''}`}
-                    />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  Atualizar dados
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {/* Botão Atualizar: no celular toque apenas recarrega sem depender de tooltip; no desktop preserva tooltip */}
+            <div className="hidden sm:block">
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={loadForms}
+                      disabled={loading}
+                      className="h-9 w-9 border-slate-200 text-slate-700 hover:bg-slate-50 shrink-0"
+                      aria-label="Atualizar dados do painel"
+                    >
+                      <RefreshCw
+                        className={`w-4 h-4 ${loading ? 'animate-spin text-[#6B3FA0]' : ''}`}
+                      />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    Atualizar dados
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <div className="block sm:hidden">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={loadForms}
+                disabled={loading}
+                className="h-9 w-9 border-slate-200 text-slate-700 hover:bg-slate-50 shrink-0"
+                aria-label="Atualizar dados do painel"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#6B3FA0]' : ''}`} />
+              </Button>
+            </div>
 
-            {/* Gerar Link Modal - Botão Primário ROXO (#6B3FA0) */}
+            {/* Gerar Link Modal - Botão Primário ROXO (#6B3FA0) no desktop; no mobile aparecerá abaixo da busca */}
             <Dialog
               open={openNewLinkDialog}
               onOpenChange={(open) => {
@@ -820,7 +857,7 @@ export default function DashboardPage() {
               }}
             >
               <DialogTrigger asChild>
-                <Button className="bg-[#6B3FA0] hover:bg-[#583385] text-white text-xs gap-1.5 shadow-sm font-medium">
+                <Button className="hidden sm:inline-flex bg-[#6B3FA0] hover:bg-[#583385] text-white text-xs gap-1.5 shadow-sm font-medium">
                   <Plus className="w-4 h-4" />
                   Gerar Novo Link de Ficha
                 </Button>
@@ -1050,14 +1087,24 @@ export default function DashboardPage() {
 
         {/* 4. Filtros: Busca, Procedimento e Filtro de Período (Padrão: Últimos 30 dias) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-3.5 sm:p-4 rounded-[12px] border border-slate-200/90 shadow-sm">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <Input
-              placeholder="Buscar por nome, CPF ou e-mail..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 text-xs h-9"
-            />
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <Input
+                placeholder="Buscar por nome, CPF ou e-mail..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 text-xs h-9"
+              />
+            </div>
+            {/* Botão Novo Link em largura total abaixo da busca no mobile */}
+            <Button
+              onClick={() => setOpenNewLinkDialog(true)}
+              className="sm:hidden w-full bg-[#6B3FA0] hover:bg-[#583385] text-white text-xs h-9 gap-1.5 shadow-sm font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Novo link
+            </Button>
           </div>
 
           <div>
@@ -1140,214 +1187,440 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
-                    <th className="py-2.5 px-4">Paciente</th>
-                    <th className="py-2.5 px-4">Procedimento</th>
-                    <th className="py-2.5 px-4">Ficha</th>
-                    <th className="py-2.5 px-4">Comprovante</th>
-                    <th className="py-2.5 px-4">Lembrete</th>
-                    <th className="py-2.5 px-4 text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredForms.map((item) => {
-                    const linkUrl = `${window.location.origin}/f/${item.token}`
-                    const isCopied = copiedId === item.id
-                    const itemAppointment = appointmentsByFormId.get(item.id)
-                    const isSigned = item.status === 'preenchida'
+            <>
+              {/* 1. VISÃO MOBILE (< 768px): Cartões Empilhados sem rolagem horizontal */}
+              <div className="md:hidden divide-y divide-slate-100">
+                {filteredForms.map((item) => {
+                  const itemAppointment = appointmentsByFormId.get(item.id)
+                  const isSigned = item.status === 'preenchida'
 
-                    // Lembrete em falha
-                    const remState = (itemAppointment?.reminder_state || '').trim().toLowerCase()
-                    const hasReminderFailure = remState === 'falha no envio' || remState === 'falha'
-                    const hasProofFailure = item.email_delivery_status === 'falha'
-
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                        {/* Coluna 1: Paciente (nome em negrito, CPF em letra pequena e cinza na linha de baixo) */}
-                        <td className="py-2.5 px-4">
-                          <div className="font-bold text-slate-900 leading-snug">
+                  return (
+                    <div
+                      key={`card-${item.id}`}
+                      className="p-4 bg-white space-y-3 transition-colors active:bg-slate-50/60"
+                    >
+                      {/* Topo: Nome da paciente em negrito + botão 3 pontos (área mínima 44x44px) */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-bold text-slate-900 text-sm leading-snug truncate">
                             {item.patient_name || (
                               <span className="italic font-normal text-slate-400">
                                 Pendente de nome
                               </span>
                             )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 leading-snug">
+                          </h3>
+                          {/* CPF em letra pequena e cinza */}
+                          <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
                             {item.patient_cpf || item.patient_phone || 'Sem contato prévio'}
-                          </div>
-                        </td>
+                          </p>
+                        </div>
 
-                        {/* Coluna 2: Procedimento (etiqueta lavanda #EDE7F6) */}
-                        <td className="py-2.5 px-4">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#EDE7F6] text-[#6B3FA0] border border-purple-200/60 whitespace-nowrap">
-                            {typeLabelMap[item.form_type] || item.form_type}
-                          </span>
-                        </td>
+                        {/* Botão de 3 pontos com área de toque mínima de 44x44px */}
+                        <button
+                          type="button"
+                          onClick={() => setDrawerActionForm(item)}
+                          className="w-11 h-11 -mr-2 -mt-2 inline-flex items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:bg-slate-200 transition-colors shrink-0"
+                          aria-label={`Ações da ficha de ${item.patient_name || 'paciente'}`}
+                        >
+                          <MoreVertical className="w-5 h-5" />
+                        </button>
+                      </div>
 
-                        {/* Coluna 3: Ficha (Aguardando em âmbar #D99A00 ou Assinada em verde #2E9E5B) */}
-                        <td className="py-2.5 px-4">
-                          {isSigned ? (
-                            <Badge className="bg-emerald-50 text-[#2E9E5B] hover:bg-emerald-50 border-emerald-200 font-medium text-[11px] gap-1 whitespace-nowrap">
-                              <CheckCircle2 className="w-3 h-3" />
-                              Assinada
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-amber-50 text-[#D99A00] hover:bg-amber-50 border-amber-200 font-medium text-[11px] gap-1 whitespace-nowrap">
-                              <Clock className="w-3 h-3" />
-                              Aguardando
-                            </Badge>
-                          )}
-                        </td>
+                      {/* Etiqueta lavanda do procedimento */}
+                      <div>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#EDE7F6] text-[#6B3FA0] border border-purple-200/60">
+                          {typeLabelMap[item.form_type] || item.form_type}
+                        </span>
+                      </div>
 
-                        {/* Coluna 4: Comprovante (Enviado verde c/ data, Falha vermelho c/ Reenviar, Não enviado cinza) */}
-                        <td className="py-2.5 px-4">
-                          {item.email_delivery_status === 'enviado' ? (
-                            <div className="flex flex-col items-start leading-tight">
-                              <span className="text-[#2E9E5B] font-semibold text-[11px] flex items-center gap-1">
-                                <Mail className="w-3 h-3" /> Enviado
-                              </span>
-                              <span className="text-[10px] text-slate-500 mt-0.5">
-                                {formatDateBR(item.email_sent_at || item.signed_at || item.created)}
-                              </span>
-                            </div>
-                          ) : item.email_delivery_status === 'falha' ? (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[#C0392B] font-semibold text-[11px] flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" /> Falha
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleResendEmail(item.id)}
-                                disabled={resendingId === item.id}
-                                className="h-5 px-1.5 text-[10px] text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
-                                title="Reenviar comprovante por e-mail"
-                              >
-                                {resendingId === item.id ? (
-                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                ) : (
-                                  <Send className="w-2.5 h-2.5" />
-                                )}
-                                Reenviar
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 font-medium text-[11px]">
-                              Não enviado
-                            </span>
-                          )}
-                        </td>
+                      {/* Etiquetas da ficha e do lembrete lado a lado */}
+                      <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                        {isSigned ? (
+                          <Badge className="bg-emerald-50 text-[#2E9E5B] hover:bg-emerald-50 border-emerald-200 font-medium text-[11px] gap-1 whitespace-nowrap">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Assinada
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-50 text-[#D99A00] hover:bg-amber-50 border-amber-200 font-medium text-[11px] gap-1 whitespace-nowrap">
+                            <Clock className="w-3 h-3" />
+                            Aguardando
+                          </Badge>
+                        )}
 
-                        {/* Coluna 5: Lembrete (ocupa uma linha só, sem a linha 'Proc.: ...') */}
-                        <td className="py-2.5 px-4">
-                          <ReminderStateBadge
-                            appointment={itemAppointment}
-                            formEmail={item.patient_email}
-                            signedAt={item.signed_at}
-                            reminders={reminders}
-                            onRetry={handleRetryReminder}
-                            isRetrying={retryingReminderId === itemAppointment?.id}
-                          />
-                        </td>
+                        <ReminderStateBadge
+                          appointment={itemAppointment}
+                          formEmail={item.patient_email}
+                          signedAt={item.signed_at}
+                          reminders={reminders}
+                          onRetry={handleRetryReminder}
+                          isRetrying={retryingReminderId === itemAppointment?.id}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
 
-                        {/* Coluna 6: Ações (Menu dropdown de 3 pontos) */}
-                        <td className="py-2.5 px-4 text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                aria-label="Ações da ficha"
-                              >
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48 text-xs">
-                              {/* Ver detalhes */}
-                              <DropdownMenuItem asChild>
-                                <Link
-                                  to={`/painel/ficha/${item.id}`}
-                                  className="flex items-center gap-2 cursor-pointer"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-slate-500" />
-                                  <span>Ver detalhes</span>
-                                </Link>
-                              </DropdownMenuItem>
+              {/* 2. VISÃO DESKTOP (>= 768px): Tabela intocada */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                      <th className="py-2.5 px-4">Paciente</th>
+                      <th className="py-2.5 px-4">Procedimento</th>
+                      <th className="py-2.5 px-4">Ficha</th>
+                      <th className="py-2.5 px-4">Comprovante</th>
+                      <th className="py-2.5 px-4">Lembrete</th>
+                      <th className="py-2.5 px-4 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredForms.map((item) => {
+                      const linkUrl = `${window.location.origin}/f/${item.token}`
+                      const isCopied = copiedId === item.id
+                      const itemAppointment = appointmentsByFormId.get(item.id)
+                      const isSigned = item.status === 'preenchida'
 
-                              {/* Abrir ficha (link público do token) */}
-                              <DropdownMenuItem
-                                onClick={() => window.open(linkUrl, '_blank')}
-                                className="flex items-center gap-2 cursor-pointer"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                                <span>Abrir ficha</span>
-                              </DropdownMenuItem>
+                      // Lembrete em falha
+                      const remState = (itemAppointment?.reminder_state || '').trim().toLowerCase()
+                      const hasReminderFailure =
+                        remState === 'falha no envio' || remState === 'falha'
+                      const hasProofFailure = item.email_delivery_status === 'falha'
 
-                              {/* Copiar link se ainda pendente */}
-                              {item.status === 'pendente' && (
-                                <DropdownMenuItem
-                                  onClick={() => copyToClipboard(linkUrl, item.id)}
-                                  className="flex items-center gap-2 cursor-pointer"
-                                >
-                                  {isCopied ? (
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                  ) : (
-                                    <Copy className="w-3.5 h-3.5 text-slate-500" />
-                                  )}
-                                  <span>{isCopied ? 'Link copiado!' : 'Copiar link'}</span>
-                                </DropdownMenuItem>
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                          {/* Coluna 1: Paciente (nome em negrito, CPF em letra pequena e cinza na linha de baixo) */}
+                          <td className="py-2.5 px-4">
+                            <div className="font-bold text-slate-900 leading-snug">
+                              {item.patient_name || (
+                                <span className="italic font-normal text-slate-400">
+                                  Pendente de nome
+                                </span>
                               )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 leading-snug">
+                              {item.patient_cpf || item.patient_phone || 'Sem contato prévio'}
+                            </div>
+                          </td>
 
-                              {/* Reenviar comprovante (SÓ aparece quando há falha no comprovante) */}
-                              {hasProofFailure && (
-                                <DropdownMenuItem
+                          {/* Coluna 2: Procedimento (etiqueta lavanda #EDE7F6) */}
+                          <td className="py-2.5 px-4">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#EDE7F6] text-[#6B3FA0] border border-purple-200/60 whitespace-nowrap">
+                              {typeLabelMap[item.form_type] || item.form_type}
+                            </span>
+                          </td>
+
+                          {/* Coluna 3: Ficha (Aguardando em âmbar #D99A00 ou Assinada em verde #2E9E5B) */}
+                          <td className="py-2.5 px-4">
+                            {isSigned ? (
+                              <Badge className="bg-emerald-50 text-[#2E9E5B] hover:bg-emerald-50 border-emerald-200 font-medium text-[11px] gap-1 whitespace-nowrap">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Assinada
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-amber-50 text-[#D99A00] hover:bg-amber-50 border-amber-200 font-medium text-[11px] gap-1 whitespace-nowrap">
+                                <Clock className="w-3 h-3" />
+                                Aguardando
+                              </Badge>
+                            )}
+                          </td>
+
+                          {/* Coluna 4: Comprovante (Enviado verde c/ data, Falha vermelho c/ Reenviar, Não enviado cinza) */}
+                          <td className="py-2.5 px-4">
+                            {item.email_delivery_status === 'enviado' ? (
+                              <div className="flex flex-col items-start leading-tight">
+                                <span className="text-[#2E9E5B] font-semibold text-[11px] flex items-center gap-1">
+                                  <Mail className="w-3 h-3" /> Enviado
+                                </span>
+                                <span className="text-[10px] text-slate-500 mt-0.5">
+                                  {formatDateBR(
+                                    item.email_sent_at || item.signed_at || item.created,
+                                  )}
+                                </span>
+                              </div>
+                            ) : item.email_delivery_status === 'falha' ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[#C0392B] font-semibold text-[11px] flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" /> Falha
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
                                   onClick={() => handleResendEmail(item.id)}
                                   disabled={resendingId === item.id}
-                                  className="flex items-center gap-2 text-[#C0392B] focus:text-[#C0392B] cursor-pointer"
+                                  className="h-5 px-1.5 text-[10px] text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
+                                  title="Reenviar comprovante por e-mail"
                                 >
-                                  <Send className="w-3.5 h-3.5" />
-                                  <span>Reenviar comprovante</span>
-                                </DropdownMenuItem>
-                              )}
+                                  {resendingId === item.id ? (
+                                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                  ) : (
+                                    <Send className="w-2.5 h-2.5" />
+                                  )}
+                                  Reenviar
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-medium text-[11px]">
+                                Não enviado
+                              </span>
+                            )}
+                          </td>
 
-                              {/* Reenviar lembrete (SÓ aparece quando há falha no envio do lembrete) */}
-                              {hasReminderFailure && itemAppointment && (
+                          {/* Coluna 5: Lembrete (ocupa uma linha só, sem a linha 'Proc.: ...') */}
+                          <td className="py-2.5 px-4">
+                            <ReminderStateBadge
+                              appointment={itemAppointment}
+                              formEmail={item.patient_email}
+                              signedAt={item.signed_at}
+                              reminders={reminders}
+                              onRetry={handleRetryReminder}
+                              isRetrying={retryingReminderId === itemAppointment?.id}
+                            />
+                          </td>
+
+                          {/* Coluna 6: Ações (Menu dropdown de 3 pontos) */}
+                          <td className="py-2.5 px-4 text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                  aria-label="Ações da ficha"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48 text-xs">
+                                {/* Ver detalhes */}
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    to={`/painel/ficha/${item.id}`}
+                                    className="flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Ver detalhes</span>
+                                  </Link>
+                                </DropdownMenuItem>
+
+                                {/* Abrir ficha (link público do token) */}
                                 <DropdownMenuItem
-                                  onClick={() => handleRetryReminder(itemAppointment.id)}
-                                  disabled={retryingReminderId === itemAppointment.id}
-                                  className="flex items-center gap-2 text-[#C0392B] focus:text-[#C0392B] cursor-pointer"
+                                  onClick={() => window.open(linkUrl, '_blank')}
+                                  className="flex items-center gap-2 cursor-pointer"
                                 >
-                                  <RefreshCw className="w-3.5 h-3.5" />
-                                  <span>Reenviar lembrete</span>
+                                  <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>Abrir ficha</span>
                                 </DropdownMenuItem>
-                              )}
 
-                              <DropdownMenuSeparator />
+                                {/* Copiar link se ainda pendente */}
+                                {item.status === 'pendente' && (
+                                  <DropdownMenuItem
+                                    onClick={() => copyToClipboard(linkUrl, item.id)}
+                                    className="flex items-center gap-2 cursor-pointer"
+                                  >
+                                    {isCopied ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                                    )}
+                                    <span>{isCopied ? 'Link copiado!' : 'Copiar link'}</span>
+                                  </DropdownMenuItem>
+                                )}
 
-                              {/* Excluir (com confirmação) */}
-                              <DropdownMenuItem
-                                onClick={() => setFormToDelete(item)}
-                                className="flex items-center gap-2 text-red-600 focus:text-red-700 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Excluir</span>
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                                {/* Reenviar comprovante (SÓ aparece quando há falha no comprovante) */}
+                                {hasProofFailure && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleResendEmail(item.id)}
+                                    disabled={resendingId === item.id}
+                                    className="flex items-center gap-2 text-[#C0392B] focus:text-[#C0392B] cursor-pointer"
+                                  >
+                                    <Send className="w-3.5 h-3.5" />
+                                    <span>Reenviar comprovante</span>
+                                  </DropdownMenuItem>
+                                )}
+
+                                {/* Reenviar lembrete (SÓ aparece quando há falha no envio do lembrete) */}
+                                {hasReminderFailure && itemAppointment && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleRetryReminder(itemAppointment.id)}
+                                    disabled={retryingReminderId === itemAppointment.id}
+                                    className="flex items-center gap-2 text-[#C0392B] focus:text-[#C0392B] cursor-pointer"
+                                  >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    <span>Reenviar lembrete</span>
+                                  </DropdownMenuItem>
+                                )}
+
+                                <DropdownMenuSeparator />
+
+                                {/* Excluir (com confirmação) */}
+                                <DropdownMenuItem
+                                  onClick={() => setFormToDelete(item)}
+                                  className="flex items-center gap-2 text-red-600 focus:text-red-700 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Excluir</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </main>
+
+      {/* Drawer / Bottom sheet de ações mobile para a ficha selecionada */}
+      <Drawer
+        open={!!drawerActionForm}
+        onOpenChange={(open) => {
+          if (!open) setDrawerActionForm(null)
+        }}
+      >
+        <DrawerContent className="bg-white max-h-[85vh] p-0 rounded-t-[20px]">
+          {drawerActionForm &&
+            (() => {
+              const item = drawerActionForm
+              const linkUrl = `${window.location.origin}/f/${item.token}`
+              const isCopied = copiedId === item.id
+              const itemAppointment = appointmentsByFormId.get(item.id)
+              const remState = (itemAppointment?.reminder_state || '').trim().toLowerCase()
+              const hasReminderFailure = remState === 'falha no envio' || remState === 'falha'
+              const hasProofFailure = item.email_delivery_status === 'falha'
+
+              return (
+                <div className="flex flex-col">
+                  <DrawerHeader className="text-left px-5 pt-3 pb-2 border-b border-slate-100">
+                    <DrawerTitle className="text-base font-bold text-slate-900 truncate">
+                      {item.patient_name || 'Ficha do paciente'}
+                    </DrawerTitle>
+                    <DrawerDescription className="text-xs text-slate-500 truncate">
+                      {item.patient_cpf ||
+                        item.patient_phone ||
+                        typeLabelMap[item.form_type] ||
+                        item.form_type}
+                    </DrawerDescription>
+                  </DrawerHeader>
+
+                  <div className="py-2 px-2 flex flex-col divide-y divide-slate-100">
+                    {/* Ver detalhes */}
+                    <Link
+                      to={`/painel/ficha/${item.id}`}
+                      onClick={() => setDrawerActionForm(null)}
+                      className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-slate-800 hover:bg-slate-50 active:bg-slate-100 transition-colors"
+                    >
+                      <Eye className="w-5 h-5 text-slate-500 shrink-0" />
+                      <span className="font-medium">Ver detalhes da ficha</span>
+                    </Link>
+
+                    {/* Abrir ficha pública */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrawerActionForm(null)
+                        window.open(linkUrl, '_blank')
+                      }}
+                      className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-slate-800 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left w-full"
+                    >
+                      <ExternalLink className="w-5 h-5 text-slate-500 shrink-0" />
+                      <span className="font-medium">Abrir ficha (link do paciente)</span>
+                    </button>
+
+                    {/* Copiar link se pendente */}
+                    {item.status === 'pendente' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          copyToClipboard(linkUrl, item.id)
+                        }}
+                        className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-slate-800 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left w-full"
+                      >
+                        {isCopied ? (
+                          <Check className="w-5 h-5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <Copy className="w-5 h-5 text-slate-500 shrink-0" />
+                        )}
+                        <span className="font-medium">
+                          {isCopied ? 'Link copiado com sucesso!' : 'Copiar link da ficha'}
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Reenviar comprovante se falha */}
+                    {hasProofFailure && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleResendEmail(item.id)
+                          setDrawerActionForm(null)
+                        }}
+                        disabled={resendingId === item.id}
+                        className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-[#C0392B] hover:bg-red-50 active:bg-red-100 transition-colors text-left w-full"
+                      >
+                        {resendingId === item.id ? (
+                          <Loader2 className="w-5 h-5 animate-spin shrink-0" />
+                        ) : (
+                          <Send className="w-5 h-5 shrink-0" />
+                        )}
+                        <span className="font-medium">Reenviar comprovante por e-mail</span>
+                      </button>
+                    )}
+
+                    {/* Reenviar lembrete se falha */}
+                    {hasReminderFailure && itemAppointment && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleRetryReminder(itemAppointment.id)
+                          setDrawerActionForm(null)
+                        }}
+                        disabled={retryingReminderId === itemAppointment.id}
+                        className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-[#C0392B] hover:bg-red-50 active:bg-red-100 transition-colors text-left w-full"
+                      >
+                        {retryingReminderId === itemAppointment.id ? (
+                          <Loader2 className="w-5 h-5 animate-spin shrink-0" />
+                        ) : (
+                          <RefreshCw className="w-5 h-5 shrink-0" />
+                        )}
+                        <span className="font-medium">Reenviar lembrete</span>
+                      </button>
+                    )}
+
+                    {/* Excluir ficha */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const toDelete = item
+                        setDrawerActionForm(null)
+                        setFormToDelete(toDelete)
+                      }}
+                      className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors text-left w-full"
+                    >
+                      <Trash2 className="w-5 h-5 shrink-0" />
+                      <span className="font-medium">Excluir ficha</span>
+                    </button>
+                  </div>
+
+                  <DrawerFooter className="px-4 py-3 border-t border-slate-100">
+                    <DrawerClose asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full h-11 text-sm font-medium border-slate-200 text-slate-700"
+                      >
+                        Fechar
+                      </Button>
+                    </DrawerClose>
+                  </DrawerFooter>
+                </div>
+              )
+            })()}
+        </DrawerContent>
+      </Drawer>
 
       {/* Modal de confirmação de exclusão */}
       <AlertDialog

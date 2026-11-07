@@ -312,6 +312,8 @@ export function ReminderStateBadge({
     return `${kindLabel} enviado em ${shortDate}`
   }, [normalizedState, sentReminder, reminder2h, reminder24h])
 
+  const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false)
+
   // 1. Sem agendamento -> traço "—" em cinza, SEM selo (após todos os hooks)
   if (!appointment) {
     return <span className="text-slate-400 font-medium">—</span>
@@ -350,8 +352,6 @@ export function ReminderStateBadge({
   // OU "Nenhum lembrete enviado" nos estados negativos.
   const isNegativeState = NEGATIVE_STATES.has(normalizedState)
   const emailToShow = actualSentTo || destinationEmail || ''
-
-  const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false)
 
   return (
     <>
