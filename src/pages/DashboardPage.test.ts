@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyFormCategory, isAppointmentWithin24Hours } from './DashboardPage'
+import { classifyFormCategory, isAppointmentWithin24Hours } from './dashboard/dashboardHelpers'
 import type { FormSubmissionRecord, ProcedureAppointmentRecord } from '@/services/forms'
 
 describe('classifyFormCategory e concordância de contagem com filtros', () => {
