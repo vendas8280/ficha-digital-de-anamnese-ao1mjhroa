@@ -440,6 +440,7 @@ export const clinicSettingsService = {
     reminder_body_24h?: string
     reminder_subject_2h?: string
     reminder_body_2h?: string
+    last_backup_export_at?: string
   }): Promise<ClinicSettingsRecord> {
     const existing = await this.getSettings()
     if (existing) {

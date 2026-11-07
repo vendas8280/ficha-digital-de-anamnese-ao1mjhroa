@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { clinicSettingsService } from '@/services/forms'
+import { backupService, type BackupProgress } from '@/services/backupService'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { Progress } from '@/components/ui/progress'
 import {
   Select,
   SelectContent,
@@ -31,6 +33,9 @@ import {
   FlaskConical,
   Send,
   LogOut,
+  Archive,
+  Download,
+  Calendar,
 } from 'lucide-react'
 import { AccessLogsCard } from '@/components/AccessLogsCard'
 
@@ -62,6 +67,11 @@ export default function SettingsPage() {
   const [reminderTestMode, setReminderTestMode] = useState(true)
 
   const [sendingTestEmail, setSendingTestEmail] = useState(false)
+
+  // Estado da seção de Backup
+  const [lastBackupExportAt, setLastBackupExportAt] = useState<string | null>(null)
+  const [exportingBackup, setExportingBackup] = useState(false)
+  const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null)
 
   // Check auth
   useEffect(() => {
@@ -106,6 +116,11 @@ export default function SettingsPage() {
           if (typeof data.reminder_test_mode === 'boolean') {
             setReminderTestMode(data.reminder_test_mode)
           }
+
+          // Backup
+          if (data.last_backup_export_at) {
+            setLastBackupExportAt(data.last_backup_export_at)
+          }
         }
       } catch (err) {
         console.error('Erro ao carregar configurações:', err)
@@ -119,8 +134,64 @@ export default function SettingsPage() {
     }
   }, [isAuthenticated])
 
+  // Formatação amigável da data do último backup
+  const formatLastBackupDate = (isoOrDate?: string | null): string => {
+    if (!isoOrDate) return 'Nunca exportada'
+    try {
+      const d = new Date(isoOrDate)
+      if (isNaN(d.getTime())) return 'Nunca exportada'
+      const dia = String(d.getDate()).padStart(2, '0')
+      const mes = String(d.getMonth() + 1).padStart(2, '0')
+      const ano = d.getFullYear()
+      const horas = String(d.getHours()).padStart(2, '0')
+      const minutos = String(d.getMinutes()).padStart(2, '0')
+      return `${dia}/${mes}/${ano} às ${horas}:${minutos}`
+    } catch {
+      return 'Nunca exportada'
+    }
+  }
+
+  // Ação de exportar todas as fichas assinadas
+  const handleExportBackup = async () => {
+    if (exportingBackup) return
+    setExportingBackup(true)
+    setBackupProgress({
+      current: 0,
+      total: 0,
+      message: 'Iniciando exportação de backup...',
+    })
+
+    try {
+      const result = await backupService.exportAllSignedForms((progress) => {
+        setBackupProgress(progress)
+      })
+
+      // Dispara download do arquivo .zip gerado
+      backupService.triggerBrowserDownload(result.zipBlob, result.fileName)
+
+      // Atualiza estado local da data de exportação
+      const nowIso = new Date().toISOString()
+      setLastBackupExportAt(nowIso)
+
+      toast({
+        title: 'Backup concluído com sucesso!',
+        description: `${result.totalExported} fichas exportadas.`,
+      })
+    } catch (err) {
+      console.error('Erro ao exportar backup:', err)
+      const msg = err instanceof Error ? err.message : 'Falha ao gerar arquivo de backup.'
+      toast({
+        title: 'Erro na exportação de backup',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setExportingBackup(false)
+      setBackupProgress(null)
+    }
+  }
+
   const validateSenderFormat = (sender: string): boolean => {
-    // Deve ser no formato: Nome <email@dominio.com>
     // Exige Nome, abertura <, usuário, arroba, domínio com ponto e fechamento >
     const regex = /^.+<[^\s@]+@[^\s@]+\.[^\s@]+>$/
     return regex.test(sender.trim())
@@ -611,6 +682,85 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </form>
+          </CardContent>
+        </Card>
+
+        {/* Card Seção "Backup" */}
+        <Card className="border-slate-200 shadow-sm bg-white rounded-xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Archive className="w-5 h-5 text-[#6B3FA0]" />
+              Backup
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-500">
+              Exporte todas as fichas assinadas do sistema em formato seguro (.zip com PDFs e
+              relatório em .csv).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  onClick={handleExportBackup}
+                  disabled={exportingBackup}
+                  className="bg-[#6B3FA0] hover:bg-[#583385] text-white text-xs font-semibold px-5 py-2 h-9 gap-2 shadow-sm transition-colors"
+                >
+                  {exportingBackup ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Exportando...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Exportar todas as fichas
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
+                <Calendar className="w-3.5 h-3.5 text-[#6B3FA0]" />
+                <span>
+                  <strong className="text-slate-700">Última exportação:</strong>{' '}
+                  <span className="font-medium text-slate-900">
+                    {formatLastBackupDate(lastBackupExportAt)}
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            {/* Barra de progresso visível durante a exportação */}
+            {exportingBackup && backupProgress && (
+              <div className="p-3.5 rounded-lg border border-purple-100 bg-purple-50/50 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#6B3FA0] font-medium flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    {backupProgress.message ||
+                      (backupProgress.total > 0
+                        ? `Gerando ${backupProgress.current} de ${backupProgress.total}...`
+                        : 'Processando...')}
+                  </span>
+                  {backupProgress.total > 0 && (
+                    <span className="text-slate-600 font-mono text-[11px]">
+                      {Math.round((backupProgress.current / backupProgress.total) * 100)}%
+                    </span>
+                  )}
+                </div>
+                {backupProgress.total > 0 && (
+                  <Progress
+                    value={(backupProgress.current / backupProgress.total) * 100}
+                    className="h-2 bg-purple-100"
+                  />
+                )}
+              </div>
+            )}
+
+            <p className="text-xs text-slate-500 pt-1">
+              Recomendado exportar uma vez por mês. Guarde o arquivo em local seguro, fora deste
+              sistema.
+            </p>
           </CardContent>
         </Card>
 

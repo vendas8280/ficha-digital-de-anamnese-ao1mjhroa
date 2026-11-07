@@ -1,4 +1,4 @@
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import {
   FormSubmissionRecord,
   ProcedureAppointmentRecord,
@@ -256,8 +256,13 @@ export const backupService = {
     try {
       const settings = await clinicSettingsService.getSettings()
       if (settings?.id) {
+        // Formatar para formato compatível com PocketBase date (ex.: 'YYYY-MM-DD HH:mm:ss' ou ISO limpo)
+        const dateObj = new Date(isoString)
+        const formattedDate = !isNaN(dateObj.getTime())
+          ? dateObj.toISOString().replace('T', ' ').substring(0, 19)
+          : isoString
         await pb.collection('clinic_settings').update(settings.id, {
-          last_backup_export_at: isoString,
+          last_backup_export_at: formattedDate,
         })
       }
     } catch (err) {
