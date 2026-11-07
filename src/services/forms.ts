@@ -447,7 +447,7 @@ export const clinicSettingsService = {
     } else {
       const defaultData = {
         clinic_name: data.clinic_name || 'Andresa Souza Clinic',
-        notification_email: data.notification_email || 'gihobaicn@hotmail.com',
+        notification_email: data.notification_email || '',
         ...data,
       }
       const created = await pb.collection('clinic_settings').create(defaultData)

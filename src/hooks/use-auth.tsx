@@ -2,13 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
 import type { RecordModel } from 'pocketbase'
 
-interface AuthContextType {
+export interface AuthContextType {
   user: RecordModel | null
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>
-  signOut: () => void
+  signIn: (email: string, password: string) => Promise<{ error: Error | null; status?: number }>
+  signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -19,13 +19,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Listen to pb auth changes
     const unsubscribe = pb.authStore.onChange((newToken, newModel) => {
       setToken(newToken)
       setUser(newModel)
     })
 
-    // Verify token validity
+    // Confirma a sessão com o servidor ANTES de qualquer dado ser renderizado.
+    // authRefresh também renova o token de 7 dias (renovação contínua da sessão).
     if (pb.authStore.isValid) {
       pb.collection('users')
         .authRefresh()
@@ -38,10 +38,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null)
           setToken(null)
         })
-        .finally(() => {
-          setIsLoading(false)
-        })
+        .finally(() => setIsLoading(false))
     } else {
+      pb.authStore.clear()
       setIsLoading(false)
     }
 
@@ -52,16 +51,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const res = await pb.collection('users').authWithPassword(email, password)
-      setUser(res.record)
-      setToken(res.token)
-      return { error: null }
+      // Login via rota server-side: aplica bloqueio de 5 tentativas/15min
+      // e registra o acesso (data, hora, IP e dispositivo) em auth_access_logs.
+      const res = await pb.send('/backend/v1/auth/login', {
+        method: 'POST',
+        body: { email: email.trim().toLowerCase(), password },
+      })
+      const data = res as { token?: string; record?: RecordModel }
+      if (data.token && data.record) {
+        pb.authStore.save(data.token, data.record)
+        setUser(data.record)
+        setToken(data.token)
+        return { error: null }
+      }
+      return { error: new Error('E-mail ou senha incorretos.') }
     } catch (err: unknown) {
-      return { error: err as Error }
+      const status = (err as { status?: number })?.status
+      return { error: err as Error, status }
     }
   }
 
-  const signOut = () => {
+  const signOut = async () => {
+    // Invalida a sessão de verdade: informa o servidor e limpa o token local.
+    try {
+      await pb.send('/backend/v1/auth/logout', { method: 'POST' })
+    } catch (_) {
+      // mesmo se o servidor falhar, o token local é descartado
+    }
     pb.authStore.clear()
     setUser(null)
     setToken(null)
