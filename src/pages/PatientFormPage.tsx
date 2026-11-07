@@ -1473,6 +1473,16 @@ export default function PatientFormPage() {
                 </div>
               </div>
 
+              {/* Aviso de transparência do registro eletrônico */}
+              <div className="bg-slate-50/80 border border-slate-200/80 rounded-lg p-3 text-[11px] text-slate-600 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <p className="leading-relaxed m-0">
+                  <strong className="text-slate-800">Transparência do registro eletrônico:</strong>{' '}
+                  Sua assinatura será registrada eletronicamente com data, hora e confirmação por
+                  e-mail. Você pode solicitar o registro completo a qualquer momento.
+                </p>
+              </div>
+
               <div className="pt-2 flex justify-between gap-3">
                 <Button
                   variant="outline"
@@ -1513,17 +1523,19 @@ export default function PatientFormPage() {
               />
 
               {/* Integrity audit metadata banner */}
-              <div className="bg-slate-50 border rounded-lg p-3 text-[11px] text-slate-600 space-y-1">
+              <div className="bg-slate-50 border rounded-lg p-3 text-[11px] text-slate-600 space-y-1.5">
                 <div className="font-semibold text-slate-800 flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Registro de Auditoria Digital & Integridade:
+                  Registro de Integridade & Confirmação Eletrônica:
                 </div>
                 <div>
-                  &bull; Nome: {patientName} (CPF: {patientCpf})
+                  &bull; Paciente: {patientName} (CPF: {patientCpf})
                 </div>
-                <div>&bull; E-mail validado: {patientEmail}</div>
-                <div>&bull; Data e Hora: Horário oficial de Brasília (registrado no envio)</div>
-                <div>&bull; IP Real do Dispositivo: Capturado no backend no momento do envio</div>
+                <div>&bull; E-mail de confirmação: {patientEmail}</div>
+                <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 leading-relaxed">
+                  Sua assinatura foi registrada eletronicamente com data, hora e confirmação por
+                  e-mail. Você pode solicitar o registro completo a qualquer momento.
+                </div>
               </div>
 
               {submissionError && (

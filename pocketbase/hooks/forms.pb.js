@@ -2169,6 +2169,9 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
                 <td style="padding: 10px 12px; font-weight: bold; color: #475569;">E-mail do Paciente:</td>
                 <td style="padding: 10px 12px; color: #0369a1; font-weight: 600;">${patientEmail}</td>
               </tr>
+              ${
+                isClinica
+                  ? `
               <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 10px 12px; font-weight: bold; color: #475569;">IP de Origem Real:</td>
                 <td style="padding: 10px 12px; font-family: monospace;">${ipOrigem}</td>
@@ -2176,7 +2179,9 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
               <tr style="border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Dispositivo / Navegador:</td>
                 <td style="padding: 10px 12px; font-size: 11px; color: #64748b; word-break: break-all;">${userAgent}</td>
-              </tr>
+              </tr>`
+                  : ''
+              }
             </table>
             <div style="background-color: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; margin: 18px 0;">
               <div style="margin: 16px 0; text-align: center;">
@@ -2184,13 +2189,23 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
                 <p style="margin: 6px 0 0 0; font-size: 12px; color: #475569; font-weight: 600;">Assinatura do paciente</p>
               </div>
             </div>
+            ${
+              isClinica
+                ? `
             <div style="background-color: #f1f5f9; border-left: 4px solid #831843; padding: 12px; margin: 18px 0; border-radius: 4px;">
               <p style="margin: 0; font-size: 12px; font-weight: bold; color: #0f172a;">Hash SHA-256 do Documento:</p>
               <p style="margin: 4px 0 0 0; font-family: monospace; font-size: 11px; word-break: break-all; color: #334155;">${docHash}</p>
               <p style="margin: 6px 0 0 0; font-size: 11px; color: #64748b; font-style: italic;">
                 Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.
               </p>
-            </div>
+            </div>`
+                : `
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; margin: 18px 0; font-size: 13px; color: #334155; line-height: 1.6;">
+              <p style="margin: 0; font-weight: 500; color: #1e293b;">
+                Sua assinatura foi registrada eletronicamente com data, hora e confirmação por e-mail. Você pode solicitar o registro completo a qualquer momento.
+              </p>
+            </div>`
+            }
           </div>
           <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
             ${!isClinica ? '<p style="margin: 0 0 8px 0; font-weight: 600; color: #065f46;">Esta é a sua via do documento assinado. Guarde para seus registros.</p>' : ''}
@@ -2317,6 +2332,461 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
     success: true,
     message: 'Comprovantes reenviados com sucesso com o PDF anexado (' + pdfFilename + ').',
   })
+})
+
+/**
+ * Endpoint POST /backend/v1/forms/send-audit-proof:
+ * Disparado sob demanda pela administradora (ação no menu da ficha)
+ * Envia à paciente o comprovante COMPLETO (PDF da ficha + relatório de auditoria detalhado anexado ou no corpo)
+ */
+routerAdd('POST', '/backend/v1/forms/send-audit-proof', (e) => {
+  var data = e.requestInfo().body || {}
+  var formId = data.id
+
+  if (!formId) {
+    return e.json(400, { error: 'ID da ficha é obrigatório' })
+  }
+
+  var formRecord
+  try {
+    formRecord = $app.findRecordById('form_submissions', formId)
+  } catch (err) {
+    return e.json(404, { error: 'Ficha não encontrada: ' + err.message })
+  }
+
+  if (formRecord.getString('status') !== 'preenchida') {
+    return e.json(400, { error: 'Ficha ainda não foi concluída/assinada' })
+  }
+
+  var patientEmail = formRecord.getString('patient_email')
+  if (!patientEmail || patientEmail.indexOf('@') <= 0) {
+    return e.json(400, { error: 'Paciente não possui e-mail válido cadastrado nesta ficha' })
+  }
+
+  var patientName = formRecord.getString('patient_name') || 'Paciente'
+  var patientCpf = formRecord.getString('patient_cpf') || 'Não informado'
+  var fType = formRecord.getString('form_type') || 'geral'
+  var fTypeLabel =
+    fType === 'botox'
+      ? 'Toxina Botulínica'
+      : fType === 'preenchimento'
+        ? 'Preenchimento'
+        : fType === 'fios'
+          ? 'Fios de PDO'
+          : fType === 'peeling'
+            ? 'Peeling Químico'
+            : fType === 'limpeza_pele'
+              ? 'Limpeza de Pele'
+              : fType === 'estetica_facial'
+                ? 'Estética Facial'
+                : fType === 'estetica_corporal'
+                  ? 'Estética Corporal'
+                  : 'Anamnese Geral'
+
+  var clinicSettings = null
+  try {
+    var cRecords = $app.findRecordsByFilter('clinic_settings', '1=1', '-created', 1, 0)
+    if (cRecords && cRecords.length > 0) {
+      clinicSettings = cRecords[0]
+    }
+  } catch (errSet) {
+    console.log('Aviso ao carregar clinic_settings para comprovante completo: ' + errSet.message)
+  }
+
+  var clinicName = clinicSettings
+    ? clinicSettings.getString('clinic_name') || 'Clínica'
+    : 'Andresa Souza Clinic'
+  var techResp = clinicSettings
+    ? clinicSettings.getString('technical_responsible') || 'Andresa Souza'
+    : 'Andresa Souza'
+  var profReg = clinicSettings
+    ? clinicSettings.getString('professional_registry') || 'Resp. Técnica'
+    : 'Resp. Técnica'
+  var clinicAddr = clinicSettings
+    ? clinicSettings.getString('clinic_address') ||
+      'Rua Jovino de Medeiros, 23, Salgado Filho, Aracaju - SE'
+    : 'Rua Jovino de Medeiros, 23, Salgado Filho, Aracaju - SE'
+  var clinicPhone = clinicSettings
+    ? clinicSettings.getString('clinic_phone') || '(79) 99809-1314'
+    : '(79) 99809-1314'
+
+  var senderEmail =
+    'nao-responda@' +
+    (clinicSettings
+      ? clinicSettings.getString('resend_domain') || 'andresasouzaclinic.com'
+      : 'andresasouzaclinic.com')
+
+  // Gera o PDF da ficha
+  var pdfResult = generatePdfForRecord(formRecord, clinicSettings)
+  if (!pdfResult || !pdfResult.base64) {
+    return e.json(500, { error: 'Não foi possível renderizar o PDF da ficha' })
+  }
+
+  function formatBr(dateStr) {
+    if (!dateStr) return 'Não registrado'
+    try {
+      var d = new Date(dateStr)
+      if (isNaN(d.getTime())) return dateStr
+      var utc = d.getTime() + d.getTimezoneOffset() * 60000
+      var brDate = new Date(utc - 3 * 60 * 60 * 1000)
+      var dia = ('0' + brDate.getDate()).slice(-2)
+      var mes = ('0' + (brDate.getMonth() + 1)).slice(-2)
+      var hora = ('0' + brDate.getHours()).slice(-2)
+      var min = ('0' + brDate.getMinutes()).slice(-2)
+      return (
+        dia +
+        '/' +
+        mes +
+        '/' +
+        brDate.getFullYear() +
+        ' às ' +
+        hora +
+        ':' +
+        min +
+        ' (Horário de Brasília)'
+      )
+    } catch (_) {
+      return dateStr
+    }
+  }
+
+  function getDataCurta(dateStr) {
+    try {
+      var d = new Date(dateStr)
+      if (isNaN(d.getTime())) return '31-10-2026'
+      var utc = d.getTime() + d.getTimezoneOffset() * 60000
+      var brDate = new Date(utc - 3 * 60 * 60 * 1000)
+      var dia = ('0' + brDate.getDate()).slice(-2)
+      var mes = ('0' + (brDate.getMonth() + 1)).slice(-2)
+      return dia + '-' + mes + '-' + brDate.getFullYear()
+    } catch (_) {
+      return '31-10-2026'
+    }
+  }
+
+  function sanitizar(nome) {
+    if (!nome) return 'Paciente'
+    var s = nome
+      .replace(/[áàâãä]/gi, 'a')
+      .replace(/[éèêë]/gi, 'e')
+      .replace(/[íìîï]/gi, 'i')
+      .replace(/[óòôõö]/gi, 'o')
+      .replace(/[úùûü]/gi, 'u')
+      .replace(/[ç]/gi, 'c')
+      .replace(/[ñ]/gi, 'n')
+    return s
+      .replace(/[^a-zA-Z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+  }
+
+  var dataCurta = getDataCurta(formRecord.getString('signed_at') || formRecord.getString('created'))
+  var nomeSanitizado = sanitizar(patientName)
+  var pdfFilename = 'Ficha-Anamnese-' + nomeSanitizado + '-' + dataCurta + '.pdf'
+
+  var cleanPdfBase64 = String(pdfResult.base64 || '').replace(/[\r\n\s]/g, '')
+  if (cleanPdfBase64.indexOf('base64,') !== -1) {
+    cleanPdfBase64 = cleanPdfBase64.substring(cleanPdfBase64.indexOf('base64,') + 7)
+  }
+
+  // Busca os eventos da trilha de auditoria para construir o relatório legível
+  var auditRows = []
+  try {
+    auditRows = $app.findRecordsByFilter(
+      'audit_events',
+      "form_submission = '" + formId + "'",
+      'created',
+      200,
+      0,
+    )
+  } catch (errEvents) {
+    console.log('Aviso ao consultar audit_events para comprovante completo: ' + errEvents.message)
+  }
+
+  var auditReportText =
+    '=================================================================\n' +
+    '   ANDRESA SOUZA CLINIC — COMPROVANTE COMPLETO DE AUDITORIA DIGITAL\n' +
+    '=================================================================\n\n' +
+    'PACIENTE: ' +
+    patientName +
+    '\n' +
+    'CPF: ' +
+    patientCpf +
+    '\n' +
+    'PROCEDIMENTO: ' +
+    fTypeLabel +
+    '\n' +
+    'DATA DA ASSINATURA: ' +
+    formatBr(formRecord.getString('signed_at') || formRecord.getString('created')) +
+    '\n' +
+    'IP DE ORIGEM: ' +
+    (formRecord.getString('ip_address') || 'Não informado') +
+    '\n' +
+    'DISPOSITIVO / NAVEGADOR: ' +
+    (formRecord.getString('user_agent') || 'Não informado') +
+    '\n' +
+    'HASH SHA-256 DO DOCUMENTO: ' +
+    (formRecord.getString('document_hash') || 'SHA-256 REGISTRADO') +
+    '\n' +
+    'STATUS DA TRILHA: Imutável com encadeamento criptográfico SHA-256\n\n' +
+    '-----------------------------------------------------------------\n' +
+    'HISTÓRICO CRONOLÓGICO DOS EVENTOS REGISTRADOS:\n' +
+    '-----------------------------------------------------------------\n'
+
+  if (!auditRows || auditRows.length === 0) {
+    auditReportText +=
+      '(Nenhum evento intermediário individual registrado. Ficha preenchida diretamente.)\n'
+  } else {
+    for (var i = 0; i < auditRows.length; i++) {
+      var ev = auditRows[i]
+      auditReportText +=
+        '[' +
+        (i + 1) +
+        '] ' +
+        formatBr(ev.getString('created')) +
+        '\n' +
+        '    Tipo: ' +
+        ev.getString('event_type') +
+        '\n' +
+        '    Descrição: ' +
+        (ev.getString('description') || '-') +
+        '\n' +
+        '    IP: ' +
+        (ev.getString('ip_address') || '-') +
+        '\n' +
+        '    Chain Hash: ' +
+        (ev.getString('chain_hash') || '(primeiro elo da cadeia)') +
+        '\n\n'
+    }
+  }
+
+  auditReportText +=
+    '-----------------------------------------------------------------\n' +
+    'AUTENTICIDADE E INTEGRIDADE:\n' +
+    'Este documento comprova o preenchimento e consentimento eletrônico\n' +
+    'em conformidade com a MP 2.200-2/2001 e a LGPD (Lei 13.709/2018).\n' +
+    'A trilha de auditoria é protegida contra edição e exclusão no banco de dados.\n' +
+    'Emitido sob solicitação da paciente em ' +
+    formatBr(new Date().toISOString()) +
+    '.\n' +
+    '=================================================================\n'
+
+  var auditBase64 = encodeBinaryStringToBase64(auditReportText)
+  var auditFilename = 'Trilha-Auditoria-' + nomeSanitizado + '-' + dataCurta + '.txt'
+
+  var attachments = [
+    {
+      filename: pdfFilename,
+      content: cleanPdfBase64,
+    },
+    {
+      filename: auditFilename,
+      content: auditBase64,
+    },
+  ]
+
+  var signedAt = formatBr(formRecord.getString('signed_at') || formRecord.getString('created'))
+  var docHash = formRecord.getString('document_hash') || 'SHA-256 REGISTRADO'
+  var ipOrigem = formRecord.getString('ip_address') || 'Não informado'
+  var userAgent = formRecord.getString('user_agent') || 'Navegador Web/Mobile'
+
+  var subject = 'Comprovante Completo com Trilha de Auditoria - ' + patientName + ' - ' + fTypeLabel
+
+  var auditHtmlTableRows = ''
+  if (auditRows && auditRows.length > 0) {
+    for (var j = 0; j < auditRows.length; j++) {
+      var r = auditRows[j]
+      auditHtmlTableRows +=
+        '<tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">' +
+        '<td style="padding: 6px 8px; color: #475569; white-space: nowrap;">' +
+        formatBr(r.getString('created')) +
+        '</td>' +
+        '<td style="padding: 6px 8px; font-weight: 600; color: #0f172a;">' +
+        r.getString('event_type') +
+        '</td>' +
+        '<td style="padding: 6px 8px; color: #334155;">' +
+        (r.getString('description') || '-') +
+        '</td>' +
+        '<td style="padding: 6px 8px; font-family: monospace; font-size: 10px; color: #64748b;">' +
+        (r.getString('chain_hash') ? r.getString('chain_hash').substring(0, 16) + '...' : '-') +
+        '</td>' +
+        '</tr>'
+    }
+  }
+
+  var fullProofHtml = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head><meta charset="UTF-8"><title>Comprovante Completo com Trilha de Auditoria</title></head>
+    <body style="font-family: Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b;">
+      <div style="max-width: 660px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+        <div style="background-color: #831843; color: #ffffff; padding: 24px; text-align: center;">
+          <h1 style="margin: 0; font-size: 22px; font-weight: bold;">${clinicName}</h1>
+          <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.95;">Comprovante Completo de Auditoria Digital & Termo Assinado</p>
+        </div>
+        <div style="padding: 24px;">
+          <p style="font-size: 15px; margin-top: 0;">
+            Olá, <strong>${patientName}</strong>! Conforme sua solicitação, segue o registro técnico completo e detalhado da assinatura eletrônica da sua ficha.
+          </p>
+          <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 13px; color: #166534;">
+            <strong>Anexos inclusos:</strong><br/>
+            &bull; <strong>${pdfFilename}</strong> (PDF oficial da ficha assinada)<br/>
+            &bull; <strong>${auditFilename}</strong> (Relatório técnico da trilha de auditoria digital com hash encadeado)
+          </div>
+
+          <h3 style="font-size: 14px; color: #831843; margin: 20px 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">Resumo dos Dados de Autenticidade</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;">
+            <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 10px; font-weight: bold; width: 35%; color: #475569;">Paciente:</td>
+              <td style="padding: 8px 10px;">${patientName} (CPF: ${patientCpf})</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 10px; font-weight: bold; color: #475569;">Procedimento:</td>
+              <td style="padding: 8px 10px; font-weight: 600;">${fTypeLabel}</td>
+            </tr>
+            <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 10px; font-weight: bold; color: #475569;">Data e Hora da Assinatura:</td>
+              <td style="padding: 8px 10px;">${signedAt}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 10px; font-weight: bold; color: #475569;">IP de Origem:</td>
+              <td style="padding: 8px 10px; font-family: monospace;">${ipOrigem}</td>
+            </tr>
+            <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 10px; font-weight: bold; color: #475569;">Dispositivo / Navegador:</td>
+              <td style="padding: 8px 10px; font-size: 11px; color: #64748b; word-break: break-all;">${userAgent}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 10px; font-weight: bold; color: #475569;">Hash SHA-256 do Documento:</td>
+              <td style="padding: 8px 10px; font-family: monospace; font-size: 11px; word-break: break-all; color: #831843;">${docHash}</td>
+            </tr>
+          </table>
+
+          ${
+            auditHtmlTableRows
+              ? `
+          <h3 style="font-size: 13px; color: #0f172a; margin: 16px 0 8px 0; font-weight: bold;">Histórico da Cadeia de Auditoria Digital (Imutável):</h3>
+          <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 18px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+              <thead>
+                <tr style="background-color: #f1f5f9; text-align: left; color: #475569;">
+                  <th style="padding: 6px 8px;">Data/Hora</th>
+                  <th style="padding: 6px 8px;">Evento</th>
+                  <th style="padding: 6px 8px;">Descrição</th>
+                  <th style="padding: 6px 8px;">Hash Cadeia</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${auditHtmlTableRows}
+              </tbody>
+            </table>
+          </div>`
+              : ''
+          }
+
+          <div style="background-color: #f1f5f9; border-left: 4px solid #831843; padding: 12px; margin: 18px 0; border-radius: 4px; font-size: 12px; color: #334155; line-height: 1.5;">
+            <strong>Garantia de Autenticidade e Imutabilidade:</strong><br/>
+            Este registro técnico é protegido por encadeamento criptográfico SHA-256 e regras de imutabilidade no banco de dados. Os arquivos originais anexados a este e-mail comprovam a integridade e irretratabilidade do consentimento assinado.
+          </div>
+        </div>
+        <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
+          <p style="margin: 0 0 6px 0; font-size: 11px; color: #475569;">Enviado para: <strong>${patientEmail}</strong> por solicitação da titular</p>
+          <strong>${clinicName}</strong> &bull; Profissional Responsável: ${techResp} (${profReg})<br/>
+          Endereço: ${clinicAddr} &bull; Telefone: ${clinicPhone}<br/>
+          Fuso horário: Horário de Brasília (UTC-3)
+        </div>
+      </div>
+    </body></html>
+  `
+
+  var resendApiKey = $os.getenv('RESEND_API_KEY')
+  if (!resendApiKey) {
+    return e.json(500, { error: 'Segredo RESEND_API_KEY não configurado no backend' })
+  }
+
+  try {
+    var resPac = $http.send({
+      url: 'https://api.resend.com/emails',
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + resendApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: senderEmail,
+        to: [patientEmail],
+        subject: subject,
+        html: fullProofHtml,
+        attachments: attachments,
+      }),
+    })
+
+    if (resPac.statusCode < 200 || resPac.statusCode >= 300) {
+      console.log(
+        'Falha ao enviar comprovante completo via Resend API (' +
+          resPac.statusCode +
+          '): ' +
+          resPac.raw,
+      )
+      return e.json(502, { error: 'Falha no envio via Resend: ' + resPac.raw })
+    }
+
+    // Registra na trilha de auditoria que o comprovante completo foi gerado e enviado
+    try {
+      var reqHeaders = e.request ? e.request.header : null
+      var reqIp = ''
+      if (reqHeaders) {
+        var reqXff = reqHeaders.get('X-Forwarded-For')
+        if (reqXff) {
+          var pXff = reqXff.split(',')
+          if (pXff.length > 0) reqIp = pXff[0].trim()
+        }
+        if (!reqIp) reqIp = reqHeaders.get('CF-Connecting-IP') || reqHeaders.get('X-Real-IP')
+      }
+      if (!reqIp && typeof e.realIP === 'function') {
+        try {
+          reqIp = e.realIP()
+        } catch (_) {}
+      }
+      var reqUa =
+        (reqHeaders && reqHeaders.get('User-Agent')) ||
+        (e.requestInfo().headers && e.requestInfo().headers['user-agent']) ||
+        'Admin Panel'
+
+      var auditCol = $app.findCollectionByNameOrId('audit_events')
+      var recAudit = new Record(auditCol)
+      recAudit.set('form_submission', formId)
+      recAudit.set('event_type', 'comprovante_completo_enviado')
+      recAudit.set(
+        'description',
+        'Administradora enviou comprovante completo com trilha de auditoria para ' + patientEmail,
+      )
+      recAudit.set('step_number', 6)
+      recAudit.set('ip_address', reqIp || '127.0.0.1')
+      recAudit.set('user_agent', reqUa)
+      recAudit.set('metadata', {
+        recipient: patientEmail,
+        requested_by: 'admin_panel',
+        attachments: [pdfFilename, auditFilename],
+      })
+      recAudit.set('timestamp', new Date().toISOString())
+      $app.save(recAudit)
+    } catch (errAud) {
+      console.log(
+        'Aviso ao registrar auditoria de envio de comprovante completo: ' + errAud.message,
+      )
+    }
+
+    return e.json(200, {
+      success: true,
+      message:
+        'Comprovante completo com trilha de auditoria enviado com sucesso para ' +
+        patientEmail +
+        '.',
+    })
+  } catch (errSend) {
+    return e.json(500, { error: 'Erro ao enviar comprovante completo: ' + errSend.message })
+  }
 })
 
 /**
@@ -3961,6 +4431,9 @@ onRecordAfterUpdateSuccess((e) => {
                   <td style="padding: 10px 12px; font-weight: bold; color: #475569;">E-mail do Paciente:</td>
                   <td style="padding: 10px 12px; color: #0369a1; font-weight: 600;">${patientEmail}</td>
                 </tr>
+                ${
+                  isClinica
+                    ? `
                 <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
                   <td style="padding: 10px 12px; font-weight: bold; color: #475569;">IP de Origem Real:</td>
                   <td style="padding: 10px 12px; font-family: monospace;">${ipOrigem}</td>
@@ -3968,7 +4441,9 @@ onRecordAfterUpdateSuccess((e) => {
                 <tr style="border-bottom: 1px solid #e2e8f0;">
                   <td style="padding: 10px 12px; font-weight: bold; color: #475569;">Dispositivo / Navegador:</td>
                   <td style="padding: 10px 12px; font-size: 11px; color: #64748b; word-break: break-all;">${userAgent}</td>
-                </tr>
+                </tr>`
+                    : ''
+                }
               </table>
               <div style="background-color: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; margin: 18px 0;">
                 <div style="margin: 16px 0; text-align: center;">
@@ -3976,13 +4451,23 @@ onRecordAfterUpdateSuccess((e) => {
                   <p style="margin: 6px 0 0 0; font-size: 12px; color: #475569; font-weight: 600;">Assinatura do paciente</p>
                 </div>
               </div>
+              ${
+                isClinica
+                  ? `
               <div style="background-color: #f1f5f9; border-left: 4px solid #831843; padding: 12px; margin: 18px 0; border-radius: 4px;">
                 <p style="margin: 0; font-size: 12px; font-weight: bold; color: #0f172a;">Hash SHA-256 do Documento:</p>
                 <p style="margin: 4px 0 0 0; font-family: monospace; font-size: 11px; word-break: break-all; color: #334155;">${docHash}</p>
                 <p style="margin: 6px 0 0 0; font-size: 11px; color: #64748b; font-style: italic;">
                   Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.
                 </p>
-              </div>
+              </div>`
+                  : `
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; margin: 18px 0; font-size: 13px; color: #334155; line-height: 1.6;">
+                <p style="margin: 0; font-weight: 500; color: #1e293b;">
+                  Sua assinatura foi registrada eletronicamente com data, hora e confirmação por e-mail. Você pode solicitar o registro completo a qualquer momento.
+                </p>
+              </div>`
+              }
             </div>
             <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
               ${!isClinica ? '<p style="margin: 0 0 8px 0; font-weight: 600; color: #065f46;">Esta é a sua via do documento assinado. Guarde para seus registros.</p>' : ''}
