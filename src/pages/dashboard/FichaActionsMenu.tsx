@@ -16,8 +16,10 @@ import {
   RefreshCw,
   Trash2,
   Loader2,
+  FileCheck,
 } from 'lucide-react'
 import type { FormSubmissionRecord, ProcedureAppointmentRecord } from '@/services/forms'
+import { downloadAuditProofPdf } from '@/services/auditProofDownload'
 import { REMINDER_PENDING_STATES } from './dashboardHelpers'
 
 interface FichaActionsMenuProps {
@@ -27,9 +29,11 @@ interface FichaActionsMenuProps {
   resendingId: string | null
   retryingReminderId: string | null
   sendingAuditProofId?: string | null
+  downloadingProofId?: string | null
   onCopyLink: (url: string, id: string) => void
   onResendEmail: (id: string) => void
   onSendAuditProof?: (form: FormSubmissionRecord) => void
+  onDownloadProof?: (form: FormSubmissionRecord) => void
   onRetryReminder: (appointmentId: string) => void
   onOpenDelete: (form: FormSubmissionRecord) => void
 }
@@ -41,9 +45,11 @@ export const FichaActionsMenu: React.FC<FichaActionsMenuProps> = ({
   resendingId,
   retryingReminderId,
   sendingAuditProofId,
+  downloadingProofId,
   onCopyLink,
   onResendEmail,
   onSendAuditProof,
+  onDownloadProof,
   onRetryReminder,
   onOpenDelete,
 }) => {
@@ -94,6 +100,28 @@ export const FichaActionsMenu: React.FC<FichaActionsMenuProps> = ({
               <Copy className="w-3.5 h-3.5 text-slate-500" />
             )}
             <span>{isCopied ? 'Link copiado!' : 'Copiar link da ficha'}</span>
+          </DropdownMenuItem>
+        )}
+
+        {/* Baixar comprovante de assinatura */}
+        {isSigned && (
+          <DropdownMenuItem
+            onClick={() => {
+              if (onDownloadProof) {
+                onDownloadProof(form)
+              } else {
+                downloadAuditProofPdf(form)
+              }
+            }}
+            disabled={downloadingProofId === form.id}
+            className="cursor-pointer flex items-center gap-2 text-emerald-700 focus:text-emerald-800 font-medium"
+          >
+            {downloadingProofId === form.id ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
+            )}
+            <span>Baixar comprovante de assinatura</span>
           </DropdownMenuItem>
         )}
 

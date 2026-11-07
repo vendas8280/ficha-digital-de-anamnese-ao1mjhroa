@@ -678,6 +678,38 @@ export default function DashboardPage() {
                       </button>
                     )}
 
+                    {/* Baixar comprovante de assinatura */}
+                    {isSigned && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const targetForm = item
+                          setDrawerActionForm(null)
+                          try {
+                            const { downloadAuditProofPdf } =
+                              await import('@/services/auditProofDownload')
+                            await downloadAuditProofPdf(targetForm)
+                            toast({
+                              title: 'Comprovante baixado',
+                              description:
+                                'O PDF do comprovante de assinatura foi gerado com sucesso.',
+                            })
+                          } catch (err: any) {
+                            toast({
+                              title: 'Erro ao baixar comprovante',
+                              description:
+                                err?.message || 'Falha ao gerar comprovante de assinatura.',
+                              variant: 'destructive',
+                            })
+                          }
+                        }}
+                        className="flex items-center gap-3 px-4 min-h-[48px] rounded-lg text-sm text-emerald-800 hover:bg-emerald-50 active:bg-emerald-100 transition-colors text-left w-full font-medium"
+                      >
+                        <FileCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>Baixar comprovante de assinatura</span>
+                      </button>
+                    )}
+
                     {/* Reenviar comprovante */}
                     {isSigned && (
                       <button

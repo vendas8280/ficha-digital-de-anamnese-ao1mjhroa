@@ -217,7 +217,7 @@ ${form.accepted_term_text || 'Termo aceito pelo paciente no momento da assinatur
           </div>
         </div>
         <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 10px; color: #64748b; text-align: center;">
-          Andresa Souza Clinic &bull; Horário de Brasília (UTC-3)
+          ${form.form_code ? `Código da Ficha: ${form.form_code} &bull; ` : ''}Andresa Souza Clinic &bull; Horário de Brasília (UTC-3)
         </div>
       </div>
 

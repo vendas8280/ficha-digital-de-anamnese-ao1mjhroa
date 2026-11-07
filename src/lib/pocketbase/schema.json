@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-07T18:27:57.058Z",
+  "generatedAt": "2026-11-07T19:12:16.121Z",
   "collections": [
     {
       "name": "users",
@@ -368,6 +368,12 @@
         {
           "name": "pdf_file",
           "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "form_code",
+          "type": "text",
           "required": false,
           "system": false
         }

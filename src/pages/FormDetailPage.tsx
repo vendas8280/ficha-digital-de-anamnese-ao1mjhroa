@@ -198,9 +198,35 @@ export default function FormDetailPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {form.status === 'preenchida' && (
               <>
+                <Button
+                  onClick={async () => {
+                    try {
+                      await downloadAuditProofPdf(form)
+                      toast({
+                        title: 'Comprovante baixado',
+                        description: 'O PDF do comprovante de assinatura foi gerado com sucesso.',
+                      })
+                      const updatedEvents = await formsService.listAuditEvents(form.id)
+                      setAuditEvents(updatedEvents)
+                    } catch (err: any) {
+                      toast({
+                        title: 'Erro ao baixar comprovante',
+                        description: err?.message || 'Falha ao gerar comprovante de assinatura.',
+                        variant: 'destructive',
+                      })
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-9 px-3 border-emerald-300 text-emerald-800 hover:bg-emerald-50 rounded-md font-medium shadow-sm transition-colors gap-1.5"
+                >
+                  <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  Baixar comprovante de assinatura
+                </Button>
+
                 <Button
                   onClick={() => setConfirmAuditProofOpen(true)}
                   disabled={sendingAuditProof}

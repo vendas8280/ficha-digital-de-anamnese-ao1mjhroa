@@ -4,6 +4,7 @@ import type { FormType, FormStatus, EmailDeliveryStatus } from '@/types/form'
 export interface FormSubmissionRecord {
   id: string
   token: string
+  form_code?: string
   form_type: FormType
   status: FormStatus
   patient_name?: string

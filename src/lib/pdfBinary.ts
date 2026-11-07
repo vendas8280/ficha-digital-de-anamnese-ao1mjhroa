@@ -484,7 +484,10 @@ export function generateFormPdfBytes(
     streamParts.push(
       `BT /F1 8.5 Tf 0.35 0.40 0.48 rg ${MARGIN_X + measureTextWidth(clinicN, 8.5) + 8} ${footerLineY - 11} Td (${escPdfWinAnsi('• Profissional Responsável: ' + tResp)}) Tj ET\n`,
     )
-    const footerL2Left = `${cAddr} • Horário de Brasília (UTC-3)`
+    const formCode = form.form_code || ''
+    const footerL2Left = formCode
+      ? `Código: ${formCode} • ${cAddr} • Horário de Brasília (UTC-3)`
+      : `${cAddr} • Horário de Brasília (UTC-3)`
     streamParts.push(
       `BT /F1 8 Tf 0.40 0.45 0.52 rg ${MARGIN_X} ${footerLineY - 22} Td (${escPdfWinAnsi(footerL2Left)}) Tj ET\n`,
     )
