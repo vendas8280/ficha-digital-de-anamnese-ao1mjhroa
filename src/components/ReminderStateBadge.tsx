@@ -1,7 +1,14 @@
 import * as React from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Sheet, SheetContent, SheetClose } from '@/components/ui/sheet'
+import {
+  Sheet,
+  SheetContent,
+  SheetClose,
+  SheetTrigger,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
 import {
   AlertTriangle,
   BellRing,
@@ -313,6 +320,19 @@ export function ReminderStateBadge({
   }, [normalizedState, sentReminder, reminder2h, reminder24h])
 
   const [mobileSheetOpen, setMobileSheetOpen] = React.useState(false)
+  const openedAtRef = React.useRef<number>(0)
+
+  const handleOpenSheet = React.useCallback(() => {
+    openedAtRef.current = Date.now()
+    setMobileSheetOpen(true)
+  }, [])
+
+  const handleOpenChange = React.useCallback((open: boolean) => {
+    if (open) {
+      openedAtRef.current = Date.now()
+    }
+    setMobileSheetOpen(open)
+  }, [])
 
   // 1. Sem agendamento -> traço "—" em cinza, SEM selo (após todos os hooks)
   if (!appointment) {
@@ -483,58 +503,76 @@ export function ReminderStateBadge({
 
       {/* 2. Celular (< 768px): Toque abre folha (bottom sheet) subindo da base, ocupando até 60% */}
       <div className="md:hidden inline-flex items-center gap-1.5 flex-wrap">
-        <button
-          type="button"
-          onClick={() => setMobileSheetOpen(true)}
-          className="inline-flex items-center min-h-[44px] cursor-pointer text-left focus:outline-none"
-          aria-label="Ver detalhes do lembrete"
-        >
-          <Badge
-            className={`${meta.className} font-medium text-xs gap-1 shadow-none transition-opacity hover:opacity-90 whitespace-nowrap py-1 px-2.5`}
-          >
-            {meta.icon}
-            {meta.label}
-          </Badge>
-        </button>
+        <Sheet open={mobileSheetOpen} onOpenChange={handleOpenChange}>
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleOpenSheet()
+              }}
+              className="inline-flex items-center min-h-[44px] cursor-pointer text-left focus:outline-none select-none active:opacity-75 transition-opacity"
+              aria-label="Ver detalhes do lembrete"
+            >
+              <Badge
+                className={`${meta.className} font-medium text-xs gap-1 shadow-none transition-opacity hover:opacity-90 whitespace-nowrap py-1 px-2.5 pointer-events-none`}
+              >
+                {meta.icon}
+                {meta.label}
+              </Badge>
+            </button>
+          </SheetTrigger>
 
-        {emailMismatch && (
-          <Badge className="bg-amber-50 text-amber-900 border-amber-300 font-medium text-[11px] gap-0.5 whitespace-nowrap py-1 px-2">
-            <AlertTriangle className="w-3 h-3 text-amber-600" />
-            Conferir e-mail
-          </Badge>
-        )}
+          {emailMismatch && (
+            <Badge className="bg-amber-50 text-amber-900 border-amber-300 font-medium text-[11px] gap-0.5 whitespace-nowrap py-1 px-2">
+              <AlertTriangle className="w-3 h-3 text-amber-600" />
+              Conferir e-mail
+            </Badge>
+          )}
 
-        {(normalizedState === 'falha no envio' || normalizedState === 'falha') && onRetry && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isRetrying}
-            onClick={(e) => {
-              e.stopPropagation()
-              onRetry(appointment.id)
-            }}
-            className="min-h-[44px] px-2 text-xs text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
-            title="Tentar reenviar lembrete via Resend"
-          >
-            <RefreshCw className={`w-3 h-3 ${isRetrying ? 'animate-spin' : ''}`} />
-            Reenviar
-          </Button>
-        )}
+          {(normalizedState === 'falha no envio' || normalizedState === 'falha') && onRetry && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isRetrying}
+              onClick={(e) => {
+                e.stopPropagation()
+                onRetry(appointment.id)
+              }}
+              className="min-h-[44px] px-2 text-xs text-[#C0392B] border-red-300 hover:bg-red-50 hover:text-red-800 gap-1"
+              title="Tentar reenviar lembrete via Resend"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRetrying ? 'animate-spin' : ''}`} />
+              Reenviar
+            </Button>
+          )}
 
-        <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
           <SheetContent
             side="bottom"
-            className="max-h-[60vh] rounded-t-[20px] rounded-b-none p-5 flex flex-col overflow-y-auto bg-white border-t border-slate-200 z-50 shadow-2xl"
+            onOpenAutoFocus={(e) => {
+              // Previne scroll automático da página ao abrir a folha
+              e.preventDefault()
+            }}
+            onPointerDownOutside={(e) => {
+              // Evita fechamento imediato por toques residuais no mobile no momento da abertura
+              if (Date.now() - openedAtRef.current < 350) {
+                e.preventDefault()
+              }
+            }}
+            className="max-h-[60vh] rounded-t-[20px] rounded-b-none p-5 flex flex-col overflow-y-auto bg-white border-t border-slate-200 z-50 shadow-2xl focus:outline-none"
           >
             {/* Alça de arrastar no topo */}
             <div className="mx-auto w-12 h-1.5 rounded-full bg-slate-300 -mt-1 mb-3 shrink-0" />
 
-            {/* Título com ícone */}
+            {/* Título com ícone acessível */}
             <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100 pr-8">
               <Calendar className="w-4 h-4 text-[#6B3FA0] shrink-0" />
-              <h3 className="text-sm font-bold text-slate-900 leading-snug">
+              <SheetTitle className="text-sm font-bold text-slate-900 leading-snug text-left">
                 Detalhes do Agendamento & Lembretes
-              </h3>
+              </SheetTitle>
+              <SheetDescription className="sr-only">
+                Detalhes do agendamento e status de envio dos lembretes
+              </SheetDescription>
             </div>
 
             {/* Os cinco campos rotulados */}
