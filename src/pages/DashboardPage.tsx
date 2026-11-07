@@ -499,6 +499,55 @@ export default function DashboardPage() {
     }
   }
 
+      {/* Top Navigation */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+=======
+    } finally {
+      setResendingId(null)
+    }
+  }
+
+  const typeLabelMap: Record<string, string> = {
+    geral: 'Anamnese Geral',
+    labios: 'Lábios & Micropigmentação',
+    botox: 'Toxina Botulínica (Botox)',
+  }
+=======
   const handleResendEmail = async (id: string) => {
     setResendingId(id)
     try {
@@ -524,12 +573,15 @@ export default function DashboardPage() {
     labios: 'Lábios & Micropigmentação',
     botox: 'Toxina Botulínica (Botox)',
   }
-
-  return (
-    <div className="min-h-screen bg-[#F7F7FA]">
+=======
       {/* Top Navigation */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
               <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                 Andresa Souza Clinic
               </h1>
@@ -538,6 +590,455 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+=======
+    } finally {
+      setResendingId(null)
+    }
+  }
+
+  const typeLabelMap: Record<string, string> = {
+    geral: 'Anamnese Geral',
+    labios: 'Lábios & Micropigmentação',
+    botox: 'Toxina Botulínica (Botox)',
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F7F7FA]">
+      {/* Top Navigation */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}
+=======
+              <div className="text-2xl font-black text-[#C0392B] mt-0.5 leading-none">
+                {categoryCounts.pendencia}
+              </div>
+            </button>
+          </div>
+
+          {/* Indicador de filtro ativo no mobile para limpar com 1 toque */}
+          {categoryFilter && (
+            <div className="flex items-center justify-between mt-1.5 px-1">
+              <span className="text-[11px] text-slate-500 font-medium">
+                Filtrando:{' '}
+                {categoryFilter === 'aguardando_paciente'
+                  ? 'Aguardando'
+                  : categoryFilter === 'fichas_prontas'
+                    ? 'Prontas'
+                    : 'Pendência'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter(null)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 underline flex items-center gap-1"
+              >
+                <FilterX className="w-3 h-3" />
+                Limpar filtro
+              </button>
+            </div>
+          )}
+        </div>
+=======
+          {/* Indicador de filtro ativo no mobile para limpar com 1 toque */}
+          {categoryFilter && (
+            <div className="flex items-center justify-between mt-1.5 px-1">
+              <span className="text-[11px] text-slate-500 font-medium">
+                Filtrando:{' '}
+                {categoryFilter === 'aguardando_paciente'
+                  ? 'Aguardando'
+                  : categoryFilter === 'fichas_prontas'
+                    ? 'Prontas'
+                    : 'Pendência'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter(null)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 underline flex items-center gap-1"
+              >
+                <FilterX className="w-3 h-3" />
+                Limpar filtro
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}
+=======
+        {/* Actions Bar & Cabeçalho */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 sm:p-5 rounded-[12px] shadow-sm border border-slate-200/90">
+=======
+        {/* Actions Bar & Cabeçalho */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 sm:p-5 rounded-[12px] shadow-sm border border-slate-200/90">          <div className="flex items-center gap-2">
+            {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+=======
+      {/* Top Navigation */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+=======
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+            {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+=======
+      {/* Top Navigation */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+=======
+  const typeLabelMap: Record<string, string> = {
+    geral: 'Anamnese Geral',
+    labios: 'Lábios & Micropigmentação',
+    botox: 'Toxina Botulínica (Botox)',
+  }
+=======
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+            {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+=======
+      {/* Top Navigation */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
 =======
         </div>
 
@@ -617,9 +1118,343 @@ export default function DashboardPage() {
           </div>
         </div>
       </header>
+=======
+  return (
+    <div className="min-h-screen bg-[#F7F7FA]">
+      {/* Top Navigation */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
 
-      {/* Main Content Area - pb-28 sm:pb-8 garante espaço extra no rodapé do mobile (safe-area + margem) para nunca cobrir a última linha com banner */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28 sm:pb-8 space-y-6">
+          <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+=======
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+            {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+=======
+      {/* Top Navigation */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Agenda como primeiro item do menu */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+=======
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+            {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+              <Link to="/painel">
+                <CalendarCheck2 className="w-3.5 h-3.5" />
+                <span>Painel de Fichas</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/configuracoes">
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Configurações</span>
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-xs gap-1 text-slate-600 hover:text-red-700"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+=======
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#6B3FA0] text-white rounded-xl flex items-center justify-center shadow-md">
+              <Sparkles className="w-5 h-5 text-purple-200" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Andresa Souza Clinic
+              </h1>
+              <p className="text-xs text-[#6B3FA0] font-medium">Painel de Fichas de Anamnese</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+=======
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}          <div className="flex items-center gap-2">
+            {/* Item 1 da spec: Agenda como primeiro item do menu, antes do painel */}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 border-purple-200 text-[#6B3FA0] hover:bg-purple-50"
+            >
+              <Link to="/agenda">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="sm"
+              className="text-xs gap-1.5 bg-[#6B3FA0] hover:bg-[#583385] text-white shadow-xs"
+            >
+
         {/* 1. Três Cartões de Estado Único no COMPUTADOR (>= 768px) - Clicáveis e mutuamente exclusivos */}
         <div className="hidden md:block space-y-2">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -935,6 +1770,33 @@ export default function DashboardPage() {
               <div className="text-[11px] font-semibold text-[#C0392B] truncate leading-tight">
                 Pendência
               </div>
+          {/* Indicador de filtro ativo no mobile para limpar com 1 toque */}
+          {categoryFilter && (
+            <div className="flex items-center justify-between mt-1.5 px-1">
+              <span className="text-[11px] text-slate-500 font-medium">
+                Filtrando:{' '}
+                {categoryFilter === 'aguardando_paciente'
+                  ? 'Aguardando'
+                  : categoryFilter === 'fichas_prontas'
+                    ? 'Prontas'
+                    : 'Pendência'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter(null)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 underline flex items-center gap-1"
+              >
+                <FilterX className="w-3 h-3" />
+                Limpar filtro
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Actions Bar & Cabeçalho */}
+=======
+        {/* Actions Bar & Cabeçalho */}
+=======
               <div className="text-2xl font-black text-[#C0392B] mt-0.5 leading-none">
                 {categoryCounts.pendencia}
               </div>
@@ -963,8 +1825,31 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+=======
+          {/* Indicador de filtro ativo no mobile para limpar com 1 toque */}
+          {categoryFilter && (
+            <div className="flex items-center justify-between mt-1.5 px-1">
+              <span className="text-[11px] text-slate-500 font-medium">
+                Filtrando:{' '}
+                {categoryFilter === 'aguardando_paciente'
+                  ? 'Aguardando'
+                  : categoryFilter === 'fichas_prontas'
+                    ? 'Prontas'
+                    : 'Pendência'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter(null)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 underline flex items-center gap-1"
+              >
+                <FilterX className="w-3 h-3" />
+                Limpar filtro
+              </button>
+            </div>
+          )}
+        </div>
 
-
+        {/* Actions Bar & Cabeçalho */}
 =======
         {/* Actions Bar & Cabeçalho */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 sm:p-5 rounded-[12px] shadow-sm border border-slate-200/90">
