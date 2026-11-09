@@ -5872,7 +5872,7 @@ onRecordAfterUpdateSuccess((e) => {
       }
       $app.save(finalFreshRecord)
       console.log(
-        'Status de envio gravado com sucesso na ficha ' +
+        '[comprovante-clinica] Status de envio gravado com sucesso na ficha ' +
           record.id +
           ' (status: ' +
           (pacDeliveryOk ? 'enviado' : 'falha') +
@@ -5881,13 +5881,19 @@ onRecordAfterUpdateSuccess((e) => {
           ')',
       )
     } catch (saveErr) {
-      console.log('Erro ao salvar status de envio no form_submissions: ' + saveErr.message)
+      console.log(
+        '[comprovante-clinica] falha ao salvar status de envio no form_submissions: ' +
+          (saveErr ? saveErr.message || String(saveErr) : 'erro desconhecido'),
+      )
     }
 
     // SEÇÃO 3: Geração isolada do Comprovante de Assinatura Eletrônica em PDF binário para a clínica
     var proofPdfBase64 = ''
     var proofFilename = ''
     try {
+      console.log(
+        '[comprovante-clinica] Iniciando Seção 3: geração do Comprovante de Assinatura em PDF',
+      )
       var formCodeVal = assignedFormCode || (record.getString('form_code') || '').trim()
       if (!formCodeVal) {
         var recDate = record.getString('created') || record.getString('signed_at') || ''
@@ -5902,10 +5908,10 @@ onRecordAfterUpdateSuccess((e) => {
       proofFilename =
         'Comprovante de Assinatura — ' + (patientName || 'Paciente') + ' — ' + formCodeVal + '.pdf'
 
-      // Busca eventos de auditoria do registro
-      var proofAuditRows = []
+      // Busca eventos de auditoria do registro convertidos em Array JS puro (Go slice não suporta .push/.sort em Goja)
+      var safeAuditRows = []
       try {
-        proofAuditRows = $app.findRecordsByFilter(
+        var rawAuditRows = $app.findRecordsByFilter(
           'audit_events',
           'form_submission = {:fid}',
           'created',
@@ -5913,16 +5919,22 @@ onRecordAfterUpdateSuccess((e) => {
           0,
           { fid: record.id },
         )
+        if (rawAuditRows && rawAuditRows.length) {
+          for (var rIdx = 0; rIdx < rawAuditRows.length; rIdx++) {
+            safeAuditRows.push(rawAuditRows[rIdx])
+          }
+        }
       } catch (eAuditRows) {
         console.log(
-          'Aviso ao consultar audit_events para comprovante no hook: ' + eAuditRows.message,
+          '[comprovante-clinica] Aviso ao consultar audit_events para comprovante no hook: ' +
+            (eAuditRows ? eAuditRows.message || String(eAuditRows) : 'erro desconhecido'),
         )
       }
 
       // Evento derivado "Termo assinado" quando a trilha não o registrou
       var hasTermoAssinado = false
-      for (var ha = 0; ha < proofAuditRows.length; ha++) {
-        var haType = (proofAuditRows[ha].getString('event_type') || '').toLowerCase()
+      for (var ha = 0; ha < safeAuditRows.length; ha++) {
+        var haType = (safeAuditRows[ha].getString('event_type') || '').toLowerCase()
         if (haType === 'termo_assinado' || haType === 'termo assinado') {
           hasTermoAssinado = true
           break
@@ -5935,7 +5947,7 @@ onRecordAfterUpdateSuccess((e) => {
         var termoTs = record.getString('signed_at') || record.getString('created') || ''
         var termoIp = (record.getString('ip_address') || '').trim() || 'não registrado'
         var termoHash = record.getString('document_hash') || 'hash registrado'
-        proofAuditRows.push({
+        safeAuditRows.push({
           getString: function (field) {
             if (field === 'event_type') return 'termo_assinado'
             if (field === 'description')
@@ -5946,7 +5958,7 @@ onRecordAfterUpdateSuccess((e) => {
           },
         })
       }
-      proofAuditRows.sort(function (a, b) {
+      safeAuditRows.sort(function (a, b) {
         var ta = (a.getString('timestamp') || a.getString('created') || '').toString()
         var tb = (b.getString('timestamp') || b.getString('created') || '').toString()
         return ta < tb ? -1 : ta > tb ? 1 : 0
@@ -5977,7 +5989,12 @@ onRecordAfterUpdateSuccess((e) => {
             }
           }
         }
-      } catch (_) {}
+      } catch (eAppt) {
+        console.log(
+          '[comprovante-clinica] aviso ao consultar agendamento: ' +
+            (eAppt ? eAppt.message || String(eAppt) : 'erro desconhecido'),
+        )
+      }
 
       // Gerador autocontido do Comprovante de Assinatura Eletrônica em PDF binário
       var proofPdfBytes = (function () {
@@ -6396,8 +6413,8 @@ onRecordAfterUpdateSuccess((e) => {
         drawProofAuditHeader()
 
         var evList =
-          proofAuditRows && proofAuditRows.length > 0
-            ? proofAuditRows
+          safeAuditRows && safeAuditRows.length > 0
+            ? safeAuditRows
             : [
                 {
                   getString: function (field) {
@@ -6714,18 +6731,22 @@ onRecordAfterUpdateSuccess((e) => {
       }
       proofPdfBase64 = proofB64
       console.log(
-        'Comprovante de assinatura gerado para clinica: ' +
+        '[comprovante-clinica] Comprovante de assinatura gerado para clinica: ' +
           proofFilename +
           ' (' +
           proofPdfBytes.length +
           ' bytes)',
       )
     } catch (errProofGen) {
-      console.log('Erro ao gerar comprovante de assinatura para clinica: ' + errProofGen.message)
+      console.log(
+        '[comprovante-clinica] falha ao gerar comprovante de assinatura para clinica: ' +
+          (errProofGen ? errProofGen.message || String(errProofGen) : 'erro desconhecido'),
+      )
     }
 
     // SEÇÃO 4: Envio isolado do e-mail para a clínica (Ficha + Comprovante de Assinatura se gerado)
     try {
+      console.log('[comprovante-clinica] Iniciando Seção 4: envio para clínica ' + clinicEmail)
       var clinicAttachments = [
         {
           filename: pdfFilename,
@@ -6737,6 +6758,13 @@ onRecordAfterUpdateSuccess((e) => {
           filename: proofFilename,
           content: proofPdfBase64,
         })
+        console.log(
+          '[comprovante-clinica] Comprovante anexado ao e-mail da clínica (' + proofFilename + ')',
+        )
+      } else {
+        console.log(
+          '[comprovante-clinica] Aviso: comprovante não disponível para anexar, enviando apenas ficha',
+        )
       }
 
       if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
@@ -6759,7 +6787,7 @@ onRecordAfterUpdateSuccess((e) => {
         if (resCli.statusCode >= 200 && resCli.statusCode < 300) {
           var dataCli = resCli.json || {}
           console.log(
-            'Direct Resend REST API email with attachments (Ficha + Comprovante) sent to ' +
+            '[comprovante-clinica] Direct Resend REST API email with attachments (Ficha + Comprovante) sent to ' +
               clinicEmail +
               '. ID: ' +
               (dataCli.id || '') +
@@ -6768,17 +6796,30 @@ onRecordAfterUpdateSuccess((e) => {
           )
         } else {
           console.log(
-            'Falha ao enviar e-mail para clinica via Resend API (' +
+            '[comprovante-clinica] falha ao enviar e-mail para clinica via Resend API (' +
               resCli.statusCode +
               '): ' +
               resCli.raw,
           )
         }
+      } else {
+        console.log(
+          '[comprovante-clinica] falha de pré-requisitos para envio à clínica: clinicEmail=' +
+            clinicEmail +
+            ', resendApiKeyConfigured=' +
+            !!resendApiKey,
+        )
       }
     } catch (errCli) {
-      console.log('Falha ao enviar e-mail para clinica: ' + errCli.message)
+      console.log(
+        '[comprovante-clinica] falha ao enviar e-mail para clinica: ' +
+          (errCli ? errCli.message || String(errCli) : 'erro desconhecido'),
+      )
     }
   } catch (err) {
-    console.log('Erro no onRecordAfterUpdateSuccess form_submissions: ' + err.message)
+    console.log(
+      '[comprovante-clinica] falha geral no onRecordAfterUpdateSuccess form_submissions: ' +
+        (err ? err.message || String(err) : 'erro desconhecido'),
+    )
   }
 }, 'form_submissions')
