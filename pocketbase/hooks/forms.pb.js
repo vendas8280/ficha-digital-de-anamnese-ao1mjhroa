@@ -4095,16 +4095,101 @@ onRecordAfterUpdateSuccess((e) => {
       console.log('Erro ao calcular lembretes na assinatura: ' + remErr.message)
     }
 
-    // Se já foi enviado com sucesso ou se já foi processado neste ciclo, evita reenvio duplicado/loop
-    var deliveryStatus = record.getString('email_delivery_status')
-    var alreadyAttached = record.getBool('pdf_attached_to_email')
-    var forceResend = record.getBool('force_email_resend')
-    if (
-      (deliveryStatus === 'enviado' || deliveryStatus === 'processado') &&
-      alreadyAttached &&
-      !forceResend
-    ) {
+    // --- INSTÂNCIA FRESCA E TRAVA DE IDEMPOTÊNCIA ANTI-DUPLICAÇÃO ---
+    // Nunca re-salvamos o objeto `record` do evento: carregamos uma instância fresca do banco.
+    var freshRecord = null
+    try {
+      freshRecord = $app.findRecordById('form_submissions', record.id)
+    } catch (eFresh) {
+      console.log(
+        'Erro ao carregar instancia fresca de form_submissions ' +
+          record.id +
+          ': ' +
+          eFresh.message,
+      )
       return
+    }
+
+    var deliveryStatus = freshRecord.getString('email_delivery_status')
+    var alreadyAttached = freshRecord.getBool('pdf_attached_to_email')
+    // Se já foi enviado com sucesso ou se já está processado, evita reenvio duplicado/loop
+    if (deliveryStatus === 'enviado' && alreadyAttached) {
+      console.log(
+        'Ficha ' + record.id + ' ja teve comprovante enviado com sucesso. Abortando reenvio.',
+      )
+      return
+    }
+
+    // --- ATRIBUIÇÃO E PERSISTÊNCIA DO FORM_CODE (AN-YYYY-XXXX) ---
+    var assignedFormCode = (freshRecord.getString('form_code') || '').trim()
+    if (!assignedFormCode) {
+      try {
+        var recDateStr =
+          freshRecord.getString('created') ||
+          freshRecord.getString('signed_at') ||
+          new Date().toISOString()
+        var recYear = recDateStr.length >= 4 ? recDateStr.substring(0, 4) : '2026'
+        // Conta quantas fichas deste ano já possuem form_code ou foram criadas antes
+        var countForYear = 1
+        try {
+          var yearMatches = $app.findRecordsByFilter(
+            'form_submissions',
+            'created >= {:yStart} && created <= {:yEnd} && form_code != ""',
+            '-created',
+            500,
+            0,
+            { yStart: recYear + '-01-01 00:00:00.000Z', yEnd: recYear + '-12-31 23:59:59.999Z' },
+          )
+          if (yearMatches && yearMatches.length > 0) {
+            countForYear = yearMatches.length + 1
+          }
+        } catch (_) {}
+
+        var seqStr = String(countForYear)
+        while (seqStr.length < 4) seqStr = '0' + seqStr
+        assignedFormCode = 'AN-' + recYear + '-' + seqStr
+
+        // Fallback defensivo com últimos dígitos do ID se necessário
+        if (!assignedFormCode || assignedFormCode.length < 11) {
+          var idPart = (freshRecord.id || '0001')
+            .replace(/[^a-zA-Z0-9]/g, '')
+            .slice(-4)
+            .toUpperCase()
+          while (idPart.length < 4) idPart = '0' + idPart
+          assignedFormCode = 'AN-' + recYear + '-' + idPart
+        }
+      } catch (errCode) {
+        console.log('Erro ao calcular form_code: ' + errCode.message)
+        var fallbackYear = '2026'
+        var fallbackId = (freshRecord.id || '0001')
+          .replace(/[^a-zA-Z0-9]/g, '')
+          .slice(-4)
+          .toUpperCase()
+        while (fallbackId.length < 4) fallbackId = '0' + fallbackId
+        assignedFormCode = 'AN-' + fallbackYear + '-' + fallbackId
+      }
+    }
+
+    // Salva o form_code na instância fresca PRIMEIRO para garantir que o código
+    // já exista no banco antes de qualquer envio de e-mail ou geração de PDF
+    try {
+      var saveFirst = false
+      if (assignedFormCode && freshRecord.getString('form_code') !== assignedFormCode) {
+        freshRecord.set('form_code', assignedFormCode)
+        saveFirst = true
+      }
+      if (saveFirst) {
+        $app.save(freshRecord)
+        console.log(
+          'Ficha ' +
+            record.id +
+            ' identificada com form_code ' +
+            assignedFormCode +
+            ' salvo com sucesso.',
+        )
+      }
+    } catch (saveCodeErr) {
+      console.log('Aviso ao salvar form_code inicial no form_submissions: ' + saveCodeErr.message)
     }
 
     var settingsRec = null
@@ -4149,7 +4234,7 @@ onRecordAfterUpdateSuccess((e) => {
     var fTypeLabel = formTypeLabels[fType] || fType
 
     // --- GERADOR DE PDF INLINE AUTOCONTIDO ---
-    var pdfResult = (function (rec, settings) {
+    var pdfResult = (function (rec, settings, customFormCode) {
       if (!rec) return { rawPdf: '', base64: '', size: 0, pages: 1 }
       var base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
       var base64Lookup = new Uint8Array(256)
@@ -5199,6 +5284,7 @@ onRecordAfterUpdateSuccess((e) => {
             ') Tj ET\n',
         )
         var formCode =
+          customFormCode ||
           (rec.getString('form_code') || '').trim() ||
           'AN-' +
             (rec.getString('created') || '').substring(0, 4) +
@@ -5368,7 +5454,7 @@ onRecordAfterUpdateSuccess((e) => {
         size: rawPdf.length,
         pages: totalPages,
       }
-    })(record, settingsRec)
+    })(freshRecord, settingsRec, assignedFormCode)
 
     function formatBr(isoStr) {
       if (!isoStr) return 'Data não informada'
@@ -5776,7 +5862,7 @@ onRecordAfterUpdateSuccess((e) => {
     var proofPdfBase64 = ''
     var proofFilename = ''
     try {
-      var formCodeVal = (record.getString('form_code') || '').trim()
+      var formCodeVal = assignedFormCode || (record.getString('form_code') || '').trim()
       if (!formCodeVal) {
         var recDate = record.getString('created') || record.getString('signed_at') || ''
         var recYear = recDate.length >= 4 ? recDate.substring(0, 4) : '2026'
@@ -6669,12 +6755,24 @@ onRecordAfterUpdateSuccess((e) => {
     }
 
     try {
-      record.set('pdf_attached_to_email', pacDeliveryOk)
-      record.set('force_email_resend', false)
-      record.set('email_delivery_status', pacDeliveryOk ? 'enviado' : 'falha')
-      record.set('email_sent_at', new Date().toISOString())
-      record.set('email_delivery_error', pacDeliveryError || '')
-      $app.save(record)
+      var finalFreshRecord = $app.findRecordById('form_submissions', record.id)
+      finalFreshRecord.set('pdf_attached_to_email', pacDeliveryOk)
+      finalFreshRecord.set('email_delivery_status', pacDeliveryOk ? 'enviado' : 'falha')
+      finalFreshRecord.set('email_sent_at', new Date().toISOString())
+      finalFreshRecord.set('email_delivery_error', pacDeliveryError || '')
+      if (assignedFormCode && !finalFreshRecord.getString('form_code')) {
+        finalFreshRecord.set('form_code', assignedFormCode)
+      }
+      $app.save(finalFreshRecord)
+      console.log(
+        'Status final salvo com sucesso na ficha ' +
+          record.id +
+          ' (status: ' +
+          (pacDeliveryOk ? 'enviado' : 'falha') +
+          ', code: ' +
+          (finalFreshRecord.getString('form_code') || assignedFormCode) +
+          ')',
+      )
     } catch (saveErr) {
       console.log('Erro ao salvar status de envio no form_submissions: ' + saveErr.message)
     }
