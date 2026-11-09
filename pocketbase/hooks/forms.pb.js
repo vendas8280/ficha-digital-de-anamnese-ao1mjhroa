@@ -4112,8 +4112,8 @@ onRecordAfterUpdateSuccess((e) => {
 
     var deliveryStatus = freshRecord.getString('email_delivery_status')
     var alreadyAttached = freshRecord.getBool('pdf_attached_to_email')
-    // Se já foi enviado com sucesso ou se já está processado, evita reenvio duplicado/loop
-    if (deliveryStatus === 'enviado' && alreadyAttached) {
+    // Se já foi enviado com sucesso ou se já está em processamento, aborta o hook inteiro imediatamente
+    if (deliveryStatus === 'enviado' || (deliveryStatus === 'enviado' && alreadyAttached)) {
       console.log(
         'Ficha ' + record.id + ' ja teve comprovante enviado com sucesso. Abortando reenvio.',
       )
@@ -4170,27 +4170,47 @@ onRecordAfterUpdateSuccess((e) => {
       }
     }
 
-    // Salva o form_code na instância fresca PRIMEIRO para garantir que o código
-    // já exista no banco antes de qualquer envio de e-mail ou geração de PDF
+    // Salva o form_code na instância fresca SEM disparar hooks para evitar reentrância
     try {
-      var saveFirst = false
       if (assignedFormCode && freshRecord.getString('form_code') !== assignedFormCode) {
         freshRecord.set('form_code', assignedFormCode)
-        saveFirst = true
-      }
-      if (saveFirst) {
-        $app.save(freshRecord)
+        if (typeof $app.unsafeWithoutHooks === 'function') {
+          $app.unsafeWithoutHooks().save(freshRecord)
+        } else {
+          $app
+            .db()
+            .newQuery('UPDATE form_submissions SET form_code = {:fc} WHERE id = {:id}')
+            .bind({ fc: assignedFormCode, id: freshRecord.id })
+            .execute()
+        }
         console.log(
           'Ficha ' +
             record.id +
             ' identificada com form_code ' +
             assignedFormCode +
-            ' salvo com sucesso.',
+            ' salvo com sucesso (sem reentrancia).',
         )
       }
     } catch (saveCodeErr) {
       console.log('Aviso ao salvar form_code inicial no form_submissions: ' + saveCodeErr.message)
     }
+
+    // TRAVA ATÔMICA ANTI-CORRIDA (write-then-send):
+    // Verificamos atomicamente e marcamos um lock em memória para esta ficha.
+    // Assim, se dois eventos de update para a mesma ficha executarem simultaneamente,
+    // apenas uma prossegue com a geração e envio dos e-mails.
+    if (!globalThis.__processingFormSubmissions) {
+      globalThis.__processingFormSubmissions = {}
+    }
+    if (globalThis.__processingFormSubmissions[record.id]) {
+      console.log(
+        'Ficha ' +
+          record.id +
+          ' ja esta sendo processada por outra execucao concorrente. Abortando reenvio.',
+      )
+      return
+    }
+    globalThis.__processingFormSubmissions[record.id] = Date.now()
 
     var settingsRec = null
     try {
@@ -5860,25 +5880,44 @@ onRecordAfterUpdateSuccess((e) => {
     }
 
     // SEÇÃO 2 (INVERSÃO PRIORITÁRIA): Persistir IMEDIATAMENTE o status de entrega do e-mail da paciente
-    // para ativar a trava anti-duplicação e garantir a integridade da ficha antes de qualquer ação secundária.
+    // SEM DISPARAR HOOKS (unsafeWithoutHooks ou raw SQL) para eliminar a recursão que re-dispara o hook.
+    var sentAtIso = new Date().toISOString()
+    var newDeliveryStatus = pacDeliveryOk ? 'enviado' : 'falha'
     try {
       var finalFreshRecord = $app.findRecordById('form_submissions', record.id)
       finalFreshRecord.set('pdf_attached_to_email', pacDeliveryOk)
-      finalFreshRecord.set('email_delivery_status', pacDeliveryOk ? 'enviado' : 'falha')
-      finalFreshRecord.set('email_sent_at', new Date().toISOString())
+      finalFreshRecord.set('email_delivery_status', newDeliveryStatus)
+      finalFreshRecord.set('email_sent_at', sentAtIso)
       finalFreshRecord.set('email_delivery_error', pacDeliveryError || '')
       if (assignedFormCode && !finalFreshRecord.getString('form_code')) {
         finalFreshRecord.set('form_code', assignedFormCode)
       }
-      $app.save(finalFreshRecord)
+      if (typeof $app.unsafeWithoutHooks === 'function') {
+        $app.unsafeWithoutHooks().save(finalFreshRecord)
+      } else {
+        $app
+          .db()
+          .newQuery(
+            'UPDATE form_submissions SET pdf_attached_to_email = {:att}, email_delivery_status = {:st}, email_sent_at = {:sa}, email_delivery_error = {:er}, form_code = {:fc} WHERE id = {:id}',
+          )
+          .bind({
+            att: pacDeliveryOk ? 1 : 0,
+            st: newDeliveryStatus,
+            sa: sentAtIso,
+            er: pacDeliveryError || '',
+            fc: finalFreshRecord.getString('form_code') || assignedFormCode || '',
+            id: record.id,
+          })
+          .execute()
+      }
       console.log(
         '[comprovante-clinica] Status de envio gravado com sucesso na ficha ' +
           record.id +
           ' (status: ' +
-          (pacDeliveryOk ? 'enviado' : 'falha') +
+          newDeliveryStatus +
           ', code: ' +
           (finalFreshRecord.getString('form_code') || assignedFormCode) +
-          ')',
+          ', salvo sem reentrancia)',
       )
     } catch (saveErr) {
       console.log(
@@ -6745,72 +6784,94 @@ onRecordAfterUpdateSuccess((e) => {
     }
 
     // SEÇÃO 4: Envio isolado do e-mail para a clínica (Ficha + Comprovante de Assinatura se gerado)
+    // Trava de idempotência: garante que a clínica só receba 1 único e-mail por ficha assinada
     try {
-      console.log('[comprovante-clinica] Iniciando Seção 4: envio para clínica ' + clinicEmail)
-      var clinicAttachments = [
-        {
-          filename: pdfFilename,
-          content: cleanPdfBase64,
-        },
-      ]
-      if (proofPdfBase64 && proofFilename) {
-        clinicAttachments.push({
-          filename: proofFilename,
-          content: proofPdfBase64,
-        })
+      if (!globalThis.__sentClinicEmails) {
+        globalThis.__sentClinicEmails = {}
+      }
+      if (globalThis.__sentClinicEmails[record.id]) {
         console.log(
-          '[comprovante-clinica] Comprovante anexado ao e-mail da clínica (' + proofFilename + ')',
+          '[comprovante-clinica] E-mail da clínica já enviado nesta ou em outra execução para ficha ' +
+            record.id +
+            '. Abortando reenvio à clínica.',
         )
       } else {
-        console.log(
-          '[comprovante-clinica] Aviso: comprovante não disponível para anexar, enviando apenas ficha',
-        )
-      }
-
-      if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
-        var resCli = $http.send({
-          url: 'https://api.resend.com/emails',
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + resendApiKey,
-            'Content-Type': 'application/json',
+        // Marca envio à clínica imediatamente para bloquear execuções paralelas
+        globalThis.__sentClinicEmails[record.id] = Date.now()
+        console.log('[comprovante-clinica] Iniciando Seção 4: envio para clínica ' + clinicEmail)
+        var clinicAttachments = [
+          {
+            filename: pdfFilename,
+            content: cleanPdfBase64,
           },
-          body: JSON.stringify({
-            from: senderEmail,
-            to: [clinicEmail],
-            subject: subject,
-            html: getHtml(true),
-            attachments: clinicAttachments,
-          }),
-        })
-
-        if (resCli.statusCode >= 200 && resCli.statusCode < 300) {
-          var dataCli = resCli.json || {}
+        ]
+        if (proofPdfBase64 && proofFilename) {
+          clinicAttachments.push({
+            filename: proofFilename,
+            content: proofPdfBase64,
+          })
           console.log(
-            '[comprovante-clinica] Direct Resend REST API email with attachments (Ficha + Comprovante) sent to ' +
-              clinicEmail +
-              '. ID: ' +
-              (dataCli.id || '') +
-              '. Attachments count: ' +
-              clinicAttachments.length,
+            '[comprovante-clinica] Comprovante anexado ao e-mail da clínica (' +
+              proofFilename +
+              ')',
           )
         } else {
           console.log(
-            '[comprovante-clinica] falha ao enviar e-mail para clinica via Resend API (' +
-              resCli.statusCode +
-              '): ' +
-              resCli.raw,
+            '[comprovante-clinica] Aviso: comprovante não disponível para anexar, enviando apenas ficha',
           )
         }
-      } else {
-        console.log(
-          '[comprovante-clinica] falha de pré-requisitos para envio à clínica: clinicEmail=' +
-            clinicEmail +
-            ', resendApiKeyConfigured=' +
-            !!resendApiKey,
-        )
+
+        if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
+          var resCli = $http.send({
+            url: 'https://api.resend.com/emails',
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + resendApiKey,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: senderEmail,
+              to: [clinicEmail],
+              subject: subject,
+              html: getHtml(true),
+              attachments: clinicAttachments,
+            }),
+          })
+
+          if (resCli.statusCode >= 200 && resCli.statusCode < 300) {
+            var dataCli = resCli.json || {}
+            console.log(
+              '[comprovante-clinica] Direct Resend REST API email with attachments (Ficha + Comprovante) sent to ' +
+                clinicEmail +
+                '. ID: ' +
+                (dataCli.id || '') +
+                '. Attachments count: ' +
+                clinicAttachments.length,
+            )
+          } else {
+            // Em caso de falha de envio, remove a marca para permitir retry futuro
+            delete globalThis.__sentClinicEmails[record.id]
+            console.log(
+              '[comprovante-clinica] falha ao enviar e-mail para clinica via Resend API (' +
+                resCli.statusCode +
+                '): ' +
+                resCli.raw,
+            )
+          }
+        } else {
+          delete globalThis.__sentClinicEmails[record.id]
+          console.log(
+            '[comprovante-clinica] falha de pré-requisitos para envio à clínica: clinicEmail=' +
+              clinicEmail +
+              ', resendApiKeyConfigured=' +
+              !!resendApiKey,
+          )
+        }
       }
     } catch (errCli) {
+      if (globalThis.__sentClinicEmails) {
+        delete globalThis.__sentClinicEmails[record.id]
+      }
       console.log(
         '[comprovante-clinica] falha ao enviar e-mail para clinica: ' +
           (errCli ? errCli.message || String(errCli) : 'erro desconhecido'),
@@ -6821,5 +6882,23 @@ onRecordAfterUpdateSuccess((e) => {
       '[comprovante-clinica] falha geral no onRecordAfterUpdateSuccess form_submissions: ' +
         (err ? err.message || String(err) : 'erro desconhecido'),
     )
+  } finally {
+    // Libera o lock de processamento após um intervalo seguro (30s) para absorver qualquer corrida residual
+    try {
+      if (record && record.id && globalThis.__processingFormSubmissions) {
+        // Mantemos por 30 segundos a marca para blindar requisições concorrentes imediatas
+        var unlockRecordId = record.id
+        // Como o runtime do PocketBase Goja pode não ter setTimeout completo em hooks de background síncronos,
+        // limpamos apenas se tiver passado mais de 30 segundos de locks anteriores antigos
+        var nowTs = Date.now()
+        var lockKeys = Object.keys(globalThis.__processingFormSubmissions)
+        for (var lk = 0; lk < lockKeys.length; lk++) {
+          var k = lockKeys[lk]
+          if (nowTs - globalThis.__processingFormSubmissions[k] > 60000) {
+            delete globalThis.__processingFormSubmissions[k]
+          }
+        }
+      }
+    } catch (_) {}
   }
 }, 'form_submissions')
