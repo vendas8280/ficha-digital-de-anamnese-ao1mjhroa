@@ -139,7 +139,7 @@ function formatBrDate(isoStr?: string): string {
     const ano = brDate.getFullYear()
     const horas = String(brDate.getHours()).padStart(2, '0')
     const minutos = String(brDate.getMinutes()).padStart(2, '0')
-    return `${dia}/${mes}/${ano} às ${horas}:${minutos} (horário de Brasília)`
+    return `${dia}/${mes}/${ano} às ${horas}:${minutos}`
   } catch (_) {
     return isoStr
   }
@@ -486,7 +486,7 @@ export function generateFormPdfBytes(
     )
     const formCode = form.form_code || ''
     const footerL2Left = formCode
-      ? `Código: ${formCode} • ${cAddr} • Horário de Brasília (UTC-3)`
+      ? `Código da Ficha: ${formCode} • ${cAddr} • Horário de Brasília (UTC-3)`
       : `${cAddr} • Horário de Brasília (UTC-3)`
     streamParts.push(
       `BT /F1 8 Tf 0.40 0.45 0.52 rg ${MARGIN_X} ${footerLineY - 22} Td (${escPdfWinAnsi(footerL2Left)}) Tj ET\n`,

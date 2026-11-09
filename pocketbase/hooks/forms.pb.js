@@ -350,6 +350,30 @@ routerAdd('POST', '/backend/v1/forms/send-verification-code', (e) => {
     auditRec.set('timestamp', nowIso)
     auditRec.set('previous_hash', prevHash)
     auditRec.set('chain_hash', cHash)
+
+    // IP real e user-agent do request (mesma lógica do endpoint client-ip)
+    try {
+      var hdrs = e.request.header
+      var realIp = ''
+      var xff = hdrs.get('X-Forwarded-For')
+      if (xff) {
+        var xffParts = xff.split(',')
+        if (xffParts.length > 0 && xffParts[0].trim()) realIp = xffParts[0].trim()
+      }
+      if (!realIp) {
+        var cfIp = hdrs.get('CF-Connecting-IP')
+        if (cfIp) realIp = cfIp.trim()
+      }
+      if (!realIp) {
+        var xRealIp = hdrs.get('X-Real-IP')
+        if (xRealIp) realIp = xRealIp.trim()
+      }
+      if (!realIp) realIp = e.realIP() || ''
+      if (realIp) auditRec.set('ip_address', realIp)
+      var ua = hdrs.get('User-Agent') || ''
+      if (ua) auditRec.set('user_agent', ua)
+    } catch (_) {}
+
     $app.save(auditRec)
   } catch (_) {}
 
@@ -536,6 +560,30 @@ routerAdd('POST', '/backend/v1/forms/verify-email-code', (e) => {
     auditRec.set('timestamp', nowIso)
     auditRec.set('previous_hash', prevHash)
     auditRec.set('chain_hash', cHash)
+
+    // IP real e user-agent do request (mesma lógica do endpoint client-ip)
+    try {
+      var hdrs = e.request.header
+      var realIp = ''
+      var xff = hdrs.get('X-Forwarded-For')
+      if (xff) {
+        var xffParts = xff.split(',')
+        if (xffParts.length > 0 && xffParts[0].trim()) realIp = xffParts[0].trim()
+      }
+      if (!realIp) {
+        var cfIp = hdrs.get('CF-Connecting-IP')
+        if (cfIp) realIp = cfIp.trim()
+      }
+      if (!realIp) {
+        var xRealIp = hdrs.get('X-Real-IP')
+        if (xRealIp) realIp = xRealIp.trim()
+      }
+      if (!realIp) realIp = e.realIP() || ''
+      if (realIp) auditRec.set('ip_address', realIp)
+      var ua = hdrs.get('User-Agent') || ''
+      if (ua) auditRec.set('user_agent', ua)
+    } catch (_) {}
+
     $app.save(auditRec)
   } catch (err) {
     console.log('Erro ao atualizar status verificado: ' + err.message)
@@ -2027,7 +2075,7 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
       if (horas.length < 2) horas = '0' + horas
       var minutos = String(brDate.getMinutes())
       if (minutos.length < 2) minutos = '0' + minutos
-      return dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos + ' (horário de Brasília)'
+      return dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos
     } catch (_) {
       return isoStr
     }
@@ -5140,7 +5188,17 @@ onRecordAfterUpdateSuccess((e) => {
             escPdfWinAnsi('• Profissional Responsável: ' + tResp) +
             ') Tj ET\n',
         )
-        var footerL2Left = cAddr + ' • Horário de Brasília (UTC-3)'
+        var formCode =
+          (rec.getString('form_code') || '').trim() ||
+          'AN-' +
+            (rec.getString('created') || '').substring(0, 4) +
+            '-' +
+            (rec.getId() || '0000')
+              .replace(/[^a-zA-Z0-9]/g, '')
+              .slice(-4)
+              .toUpperCase()
+        var footerL2Left =
+          'Código da Ficha: ' + formCode + ' • ' + cAddr + ' • Horário de Brasília (UTC-3)'
         streamParts.push(
           'BT /F1 8 Tf 0.40 0.45 0.52 rg ' +
             MARGIN_X +
@@ -5317,9 +5375,7 @@ onRecordAfterUpdateSuccess((e) => {
         if (horas.length < 2) horas = '0' + horas
         var minutos = String(brDate.getMinutes())
         if (minutos.length < 2) minutos = '0' + minutos
-        return (
-          dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos + ' (horário de Brasília)'
-        )
+        return dia + '/' + mes + '/' + ano + ' às ' + horas + ':' + minutos
       } catch (_) {
         return isoStr
       }
@@ -5741,8 +5797,41 @@ onRecordAfterUpdateSuccess((e) => {
         )
       }
 
+      // Evento derivado "Termo assinado" quando a trilha não o registrou
+      var hasTermoAssinado = false
+      for (var ha = 0; ha < proofAuditRows.length; ha++) {
+        var haType = (proofAuditRows[ha].getString('event_type') || '').toLowerCase()
+        if (haType === 'termo_assinado' || haType === 'termo assinado') {
+          hasTermoAssinado = true
+          break
+        }
+      }
+      if (
+        !hasTermoAssinado &&
+        (record.getString('signed_at') || record.getString('document_hash'))
+      ) {
+        var termoTs = record.getString('signed_at') || record.getString('created') || ''
+        var termoIp = (record.getString('ip_address') || '').trim() || 'não registrado'
+        var termoHash = record.getString('document_hash') || 'hash registrado'
+        proofAuditRows.push({
+          getString: function (field) {
+            if (field === 'event_type') return 'termo_assinado'
+            if (field === 'description')
+              return 'Termo assinado — assinatura eletrônica concluída (hash: ' + termoHash + ')'
+            if (field === 'created' || field === 'timestamp') return termoTs
+            if (field === 'ip_address') return termoIp
+            return ''
+          },
+        })
+      }
+      proofAuditRows.sort(function (a, b) {
+        var ta = (a.getString('timestamp') || a.getString('created') || '').toString()
+        var tb = (b.getString('timestamp') || b.getString('created') || '').toString()
+        return ta < tb ? -1 : ta > tb ? 1 : 0
+      })
+
       // Procedimento do agendamento (se houver)
-      var proofApptDateStr = 'Conforme agendamento'
+      var proofApptDateStr = 'A definir'
       try {
         var apptRows = $app.findRecordsByFilter(
           'procedure_appointments',
@@ -6136,9 +6225,9 @@ onRecordAfterUpdateSuccess((e) => {
         ])
 
         // Bloco 4
-        drawTitle('BLOCO 4 — Trilha Cronológica de Eventos')
-        var cWDate = 105
-        var cWIp = 95
+        drawTitle('BLOCO 4 — Trilha Cronológica de Eventos (datas em horário de Brasília)')
+        var cWDate = 140
+        var cWIp = 75
         var cWEv = CONTENT_WIDTH - cWDate - cWIp
 
         function drawProofAuditHeader() {

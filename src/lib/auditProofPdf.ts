@@ -143,15 +143,16 @@ function formatDateBR(dateStr?: string): string {
   try {
     const d = new Date(dateStr)
     if (isNaN(d.getTime())) return dateStr
-    return d.toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
+    // Formato curto fixo "09/11/2026 às 10:39" — cabe em uma linha na coluna DATA/HORA.
+    // Convertido para o horário de Brasília (UTC-3), como declarado no título da tabela.
+    const utc = d.getTime() + d.getTimezoneOffset() * 60000
+    const br = new Date(utc - 3 * 3600000)
+    const dia = String(br.getDate()).padStart(2, '0')
+    const mes = String(br.getMonth() + 1).padStart(2, '0')
+    const ano = br.getFullYear()
+    const horas = String(br.getHours()).padStart(2, '0')
+    const minutos = String(br.getMinutes()).padStart(2, '0')
+    return `${dia}/${mes}/${ano} às ${horas}:${minutos}`
   } catch {
     return dateStr
   }
@@ -217,17 +218,17 @@ export function generateAuditProofPdfBytes(
   }
   const procName = procLabels[form.form_type] || form.form_type || 'Procedimento Estético'
 
-  let procDateTime = 'Conforme agendamento'
+  let procDateTime = 'A definir'
   if (appointment && appointment.procedure_date) {
     try {
       const dtParts = appointment.procedure_date.split('T')[0].split('-')
       if (dtParts.length === 3) {
         const dStr = `${dtParts[2]}/${dtParts[1]}/${dtParts[0]}`
-        const tStr = appointment.procedure_time || 'Horário a definir'
-        procDateTime = `${dStr} às ${tStr}`
+        const tStr = appointment.procedure_time || ''
+        procDateTime = tStr ? `${dStr} às ${tStr}` : `${dStr} (hora a definir)`
       }
     } catch {
-      procDateTime = `${appointment.procedure_date} ${appointment.procedure_time || ''}`
+      procDateTime = `${appointment.procedure_date} ${appointment.procedure_time || ''}`.trim()
     }
   }
 
@@ -366,12 +367,12 @@ export function generateAuditProofPdfBytes(
   ])
 
   // ══════ BLOCO 4 — TRILHA COMPLETA CRONOLÓGICA ══════
-  drawBlockTitle('BLOCO 4 — Trilha Cronológica de Eventos')
+  drawBlockTitle('BLOCO 4 — Trilha Cronológica de Eventos (datas em horário de Brasília)')
 
   // Cabeçalho da tabela de trilha
-  const colWDate = 105
-  const colWIp = 95
-  const colWEvent = CONTENT_WIDTH - colWDate - colWIp // ~323 pt
+  const colWDate = 140
+  const colWIp = 75
+  const colWEvent = CONTENT_WIDTH - colWDate - colWIp // ~348 pt
 
   function drawAuditTableHeader() {
     ensureSpace(18)
@@ -390,21 +391,48 @@ export function generateAuditProofPdfBytes(
 
   drawAuditTableHeader()
 
-  // Se não houver eventos cadastrados, insere eventos básicos
-  const eventList =
-    audits && audits.length > 0
-      ? audits
-      : [
+  // Deriva o evento "Termo assinado" dos dados do aceite quando não existe no histórico
+  const hasTermoAssinado = (audits || []).some((a) => {
+    const t = (a.event_type || '').toLowerCase()
+    return t === 'termo_assinado' || t === 'termo assinado'
+  })
+  const derivedTermo: AuditEventRecord[] =
+    !hasTermoAssinado && (form.signed_at || docHash !== 'Hash não gerado')
+      ? [
           {
-            id: 'synth-1',
+            id: 'synth-termo',
             form_submission: form.id,
             event_type: 'termo_assinado',
-            description: `Paciente concluiu a assinatura eletrônica da ficha (Hash: ${docHash})`,
+            description: `Termo assinado — assinatura eletrônica concluída (hash: ${docHash})`,
             timestamp: form.signed_at || form.created,
-            ip_address: form.ip_address,
+            ip_address: ipOrigem === 'não registrado' ? '' : form.ip_address,
             created: form.created,
           } as AuditEventRecord,
         ]
+      : []
+
+  // Trilha completa: eventos registrados + evento derivado do aceite
+  const eventList: AuditEventRecord[] = [...(audits || []), ...derivedTermo]
+
+  // Sem eventos registrados: trilha mínima garantida
+  if (eventList.length === 0) {
+    eventList.push({
+      id: 'synth-1',
+      form_submission: form.id,
+      event_type: 'link_aberto',
+      description: 'Paciente abriu o link seguro da ficha de anamnese',
+      timestamp: form.created,
+      ip_address: form.ip_address,
+      created: form.created,
+    } as AuditEventRecord)
+  }
+
+  // Ordena a trilha cronologicamente (o evento derivado fica na posição correta)
+  eventList.sort((a, b) => {
+    const ta = String(a.timestamp || a.created || '')
+    const tb = String(b.timestamp || b.created || '')
+    return ta < tb ? -1 : ta > tb ? 1 : 0
+  })
 
   for (let ei = 0; ei < eventList.length; ei++) {
     const ev = eventList[ei]

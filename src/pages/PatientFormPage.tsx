@@ -416,7 +416,7 @@ export default function PatientFormPage() {
       await formsService.recordAuditEvent({
         token,
         event_type: 'termo_assinado',
-        description: `Paciente concluiu a assinatura eletrônica da ficha de anamnese (Hash: ${docHash})`,
+        description: `Termo assinado — assinatura eletrônica concluída (hash: ${docHash})`,
         step_number: 6,
         metadata: {
           ip: ipAddress,

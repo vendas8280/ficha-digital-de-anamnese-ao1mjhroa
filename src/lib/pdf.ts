@@ -221,6 +221,10 @@ ${form.accepted_term_text || 'Termo aceito pelo paciente no momento da assinatur
         </div>
       </div>
 
+      <div style="position: fixed; bottom: 0; left: 0; right: 0; padding: 8px 24px; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid #e2e8f0; background: #ffffff;">
+        ${form.form_code ? `Código da Ficha: ${form.form_code} &bull; ` : ''}Andresa Souza Clinic
+      </div>
+
       <div style="text-align: center; margin-top: 24px;" class="no-print">
         <button onclick="window.print()" style="background-color: #831843; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">
           Imprimir / Salvar como PDF
