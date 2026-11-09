@@ -5782,6 +5782,7 @@ onRecordAfterUpdateSuccess((e) => {
     var pacDeliveryOk = false
     var pacDeliveryError = ''
 
+    // SEÇÃO 1: Envio do e-mail com a ficha em PDF para a paciente
     if (patientEmail && patientEmail.indexOf('@') > 0 && resendApiKey) {
       try {
         var resPac = $http.send({
@@ -5858,7 +5859,32 @@ onRecordAfterUpdateSuccess((e) => {
       }
     }
 
-    // Geração do Comprovante de Assinatura Eletrônica em PDF binário separado para envio à clínica
+    // SEÇÃO 2 (INVERSÃO PRIORITÁRIA): Persistir IMEDIATAMENTE o status de entrega do e-mail da paciente
+    // para ativar a trava anti-duplicação e garantir a integridade da ficha antes de qualquer ação secundária.
+    try {
+      var finalFreshRecord = $app.findRecordById('form_submissions', record.id)
+      finalFreshRecord.set('pdf_attached_to_email', pacDeliveryOk)
+      finalFreshRecord.set('email_delivery_status', pacDeliveryOk ? 'enviado' : 'falha')
+      finalFreshRecord.set('email_sent_at', new Date().toISOString())
+      finalFreshRecord.set('email_delivery_error', pacDeliveryError || '')
+      if (assignedFormCode && !finalFreshRecord.getString('form_code')) {
+        finalFreshRecord.set('form_code', assignedFormCode)
+      }
+      $app.save(finalFreshRecord)
+      console.log(
+        'Status de envio gravado com sucesso na ficha ' +
+          record.id +
+          ' (status: ' +
+          (pacDeliveryOk ? 'enviado' : 'falha') +
+          ', code: ' +
+          (finalFreshRecord.getString('form_code') || assignedFormCode) +
+          ')',
+      )
+    } catch (saveErr) {
+      console.log('Erro ao salvar status de envio no form_submissions: ' + saveErr.message)
+    }
+
+    // SEÇÃO 3: Geração isolada do Comprovante de Assinatura Eletrônica em PDF binário para a clínica
     var proofPdfBase64 = ''
     var proofFilename = ''
     try {
@@ -6698,23 +6724,22 @@ onRecordAfterUpdateSuccess((e) => {
       console.log('Erro ao gerar comprovante de assinatura para clinica: ' + errProofGen.message)
     }
 
-    // Anexos para a clínica: PDF da ficha + Comprovante de Assinatura (se gerado)
-    var clinicAttachments = [
-      {
-        filename: pdfFilename,
-        content: cleanPdfBase64,
-      },
-    ]
-    if (proofPdfBase64 && proofFilename) {
-      clinicAttachments.push({
-        filename: proofFilename,
-        content: proofPdfBase64,
-      })
-    }
+    // SEÇÃO 4: Envio isolado do e-mail para a clínica (Ficha + Comprovante de Assinatura se gerado)
+    try {
+      var clinicAttachments = [
+        {
+          filename: pdfFilename,
+          content: cleanPdfBase64,
+        },
+      ]
+      if (proofPdfBase64 && proofFilename) {
+        clinicAttachments.push({
+          filename: proofFilename,
+          content: proofPdfBase64,
+        })
+      }
 
-    // Envia clínica direto via API REST Resend com anexos (Ficha + Comprovante de Assinatura)
-    if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
-      try {
+      if (clinicEmail && clinicEmail.indexOf('@') > 0 && resendApiKey) {
         var resCli = $http.send({
           url: 'https://api.resend.com/emails',
           method: 'POST',
@@ -6749,32 +6774,9 @@ onRecordAfterUpdateSuccess((e) => {
               resCli.raw,
           )
         }
-      } catch (errCli) {
-        console.log('Falha ao enviar e-mail para clinica: ' + errCli.message)
       }
-    }
-
-    try {
-      var finalFreshRecord = $app.findRecordById('form_submissions', record.id)
-      finalFreshRecord.set('pdf_attached_to_email', pacDeliveryOk)
-      finalFreshRecord.set('email_delivery_status', pacDeliveryOk ? 'enviado' : 'falha')
-      finalFreshRecord.set('email_sent_at', new Date().toISOString())
-      finalFreshRecord.set('email_delivery_error', pacDeliveryError || '')
-      if (assignedFormCode && !finalFreshRecord.getString('form_code')) {
-        finalFreshRecord.set('form_code', assignedFormCode)
-      }
-      $app.save(finalFreshRecord)
-      console.log(
-        'Status final salvo com sucesso na ficha ' +
-          record.id +
-          ' (status: ' +
-          (pacDeliveryOk ? 'enviado' : 'falha') +
-          ', code: ' +
-          (finalFreshRecord.getString('form_code') || assignedFormCode) +
-          ')',
-      )
-    } catch (saveErr) {
-      console.log('Erro ao salvar status de envio no form_submissions: ' + saveErr.message)
+    } catch (errCli) {
+      console.log('Falha ao enviar e-mail para clinica: ' + errCli.message)
     }
   } catch (err) {
     console.log('Erro no onRecordAfterUpdateSuccess form_submissions: ' + err.message)
