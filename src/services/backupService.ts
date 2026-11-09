@@ -218,8 +218,25 @@ export const backupService = {
       const pdfFileName = `${folderName}.pdf`
       const pdfFilePath = `${folderName}/${pdfFileName}`
 
-      // 1. Gerar PDF binário da ficha
-      const pdfBytes = generateFormPdfBytes(form, settings)
+      // 1. Obter PDF binário da ficha: buscar do storage (PDF congelado) com fallback para gerador local
+      let pdfBytes: Uint8Array
+      if (form.pdf_file) {
+        try {
+          const fileUrl = pb.files.getURL(form, form.pdf_file)
+          const resp = await fetch(fileUrl)
+          if (resp.ok) {
+            const buf = await resp.arrayBuffer()
+            pdfBytes = new Uint8Array(buf)
+          } else {
+            pdfBytes = generateFormPdfBytes(form, settings)
+          }
+        } catch {
+          pdfBytes = generateFormPdfBytes(form, settings)
+        }
+      } else {
+        pdfBytes = generateFormPdfBytes(form, settings)
+      }
+
       const formDate = form.signed_at ? new Date(form.signed_at) : new Date(form.created)
 
       zipEntries.push({

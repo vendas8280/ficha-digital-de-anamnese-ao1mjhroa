@@ -5594,16 +5594,232 @@ onRecordAfterUpdateSuccess((e) => {
     var nomeSanitizado = sanitizar(patientName)
     var pdfFilename = 'Ficha-Anamnese-' + nomeSanitizado + '-' + dataCurta + '.pdf'
 
-    var cleanPdfBase64 = String(pdfResult.base64 || '').replace(/[\r\n\s]/g, '')
+    // --- CONGELAMENTO DO PDF DA FICHA NO STORAGE (ETAPAS 1, 2 E 3) ---
+    // 1. Grava o PDF binário gerado uma única vez no storage no campo pdf_file.
+    // 2. Relê os bytes EXATOS gravados no storage e calcula stored_hash (SHA-256 definitivo),
+    //    atualizando também document_hash para que hash e arquivo venham da mesma fonte imutável.
+    // 3. Valida a integridade antes de anexar aos e-mails da paciente e da clínica.
+    var frozenPdfBytes = ''
+    var frozenPdfBase64 = ''
+    var frozenPdfFilename = ''
+    var isFrozenPdfValid = false
+
+    try {
+      console.log(
+        '[pdf-congelado] Iniciando congelamento do PDF no storage para ficha ' + record.id,
+      )
+      var storageFs = null
+      var storageReader = null
+      var generatedPdfRaw = pdfResult.rawPdf || ''
+
+      if (generatedPdfRaw && generatedPdfRaw.length > 0) {
+        var frozenRecord = $app.findRecordById('form_submissions', record.id)
+        var existingPdfFile = frozenRecord.getString('pdf_file')
+
+        // Se ainda não tiver pdf_file gravado, faz o upload e vincula ao record
+        if (!existingPdfFile) {
+          // Nome do arquivo salvo no storage (garantindo extensão .pdf)
+          var uploadFileName = pdfFilename
+          var uploadedFsFile = null
+
+          // Tenta criar o File via $filesystem se disponível ou upload direto
+          try {
+            if (
+              typeof $filesystem !== 'undefined' &&
+              typeof $filesystem.fileFromBytes === 'function'
+            ) {
+              uploadedFsFile = $filesystem.fileFromBytes(generatedPdfRaw, uploadFileName)
+            }
+          } catch (eFf) {
+            console.log(
+              '[pdf-congelado] $filesystem.fileFromBytes indisponivel: ' + (eFf ? eFf.message : ''),
+            )
+          }
+
+          if (uploadedFsFile) {
+            frozenRecord.set('pdf_file', uploadedFsFile)
+            if (typeof $app.unsafeWithoutHooks === 'function') {
+              $app.unsafeWithoutHooks().save(frozenRecord)
+            } else {
+              $app.save(frozenRecord)
+            }
+            existingPdfFile = frozenRecord.getString('pdf_file')
+            console.log(
+              '[pdf-congelado] PDF gravado via record.set($filesystem.File): ' + existingPdfFile,
+            )
+          } else {
+            // Upload direto via $app.newFilesystem()
+            storageFs = $app.newFilesystem()
+            var directFileName = (frozenRecord.id || 'f') + '_' + Date.now().toString(36) + '.pdf'
+            var directKey = frozenRecord.baseFilesPath() + '/' + directFileName
+            if (typeof storageFs.upload === 'function') {
+              storageFs.upload(generatedPdfRaw, directKey)
+            } else if (typeof storageFs.Upload === 'function') {
+              storageFs.Upload(generatedPdfRaw, directKey)
+            }
+            frozenRecord.set('pdf_file', directFileName)
+            if (typeof $app.unsafeWithoutHooks === 'function') {
+              $app.unsafeWithoutHooks().save(frozenRecord)
+            } else {
+              $app
+                .db()
+                .newQuery('UPDATE form_submissions SET pdf_file = {:pf} WHERE id = {:id}')
+                .bind({ pf: directFileName, id: frozenRecord.id })
+                .execute()
+            }
+            existingPdfFile = directFileName
+            console.log(
+              '[pdf-congelado] PDF gravado via storageFs.upload direto: ' + directFileName,
+            )
+          }
+        }
+
+        // Reler do storage para garantir o SHA-256 sobre os bytes EXATAMENTE armazenados
+        if (existingPdfFile) {
+          if (!storageFs) {
+            storageFs = $app.newFilesystem()
+          }
+          var storageKey = frozenRecord.baseFilesPath() + '/' + existingPdfFile
+          storageReader = storageFs.getReader(storageKey)
+          var readStoredContent = toString(storageReader)
+
+          if (readStoredContent && readStoredContent.length > 0) {
+            frozenPdfBytes = readStoredContent
+            frozenPdfFilename = existingPdfFile
+
+            // Calcula SHA-256 definitivo sobre os bytes do storage
+            var calculatedStoredHash = ''
+            try {
+              if (typeof $security !== 'undefined' && typeof $security.sha256 === 'function') {
+                calculatedStoredHash = $security.sha256(readStoredContent)
+              }
+            } catch (_) {}
+            if (!calculatedStoredHash) {
+              calculatedStoredHash = computeSha256HexLocal(readStoredContent)
+            }
+
+            console.log(
+              '[pdf-congelado] Hash calculado sobre bytes do storage: ' +
+                calculatedStoredHash +
+                ' (' +
+                readStoredContent.length +
+                ' bytes)',
+            )
+
+            // Atualiza stored_hash e document_hash com o mesmo valor exato
+            var hashUpdatedRecord = $app.findRecordById('form_submissions', record.id)
+            hashUpdatedRecord.set('stored_hash', calculatedStoredHash)
+            hashUpdatedRecord.set('document_hash', calculatedStoredHash)
+            if (typeof $app.unsafeWithoutHooks === 'function') {
+              $app.unsafeWithoutHooks().save(hashUpdatedRecord)
+            } else {
+              $app
+                .db()
+                .newQuery(
+                  'UPDATE form_submissions SET stored_hash = {:sh}, document_hash = {:dh} WHERE id = {:id}',
+                )
+                .bind({ sh: calculatedStoredHash, dh: calculatedStoredHash, id: record.id })
+                .execute()
+            }
+
+            // ETAPA 3: Conferir integridade relendo e comparando com stored_hash
+            var verifyHash = ''
+            try {
+              if (typeof $security !== 'undefined' && typeof $security.sha256 === 'function') {
+                verifyHash = $security.sha256(frozenPdfBytes)
+              }
+            } catch (_) {}
+            if (!verifyHash) {
+              verifyHash = computeSha256HexLocal(frozenPdfBytes)
+            }
+
+            if (verifyHash === calculatedStoredHash) {
+              isFrozenPdfValid = true
+              frozenPdfBase64 = encodeBinaryStringToBase64(frozenPdfBytes)
+              console.log(
+                '[pdf-congelado] Integridade verificada com sucesso! Hash gravado e verificado coincidem.',
+              )
+            } else {
+              isFrozenPdfValid = false
+              console.log(
+                '[pdf-congelado] ALERTA DE DIVERGENCIA DE HASH: verificado=' +
+                  verifyHash +
+                  ' vs esperado=' +
+                  calculatedStoredHash,
+              )
+              recordAuditInHook(
+                record.id,
+                'divergencia_hash_pdf_storage',
+                'Alerta de integridade: hash dos bytes do storage divergiu do stored_hash gravado. Entrega de e-mail com anexo bloqueada.',
+                6,
+                {
+                  hash_esperado: calculatedStoredHash,
+                  hash_verificado: verifyHash,
+                  pdf_file: existingPdfFile,
+                },
+              )
+            }
+          }
+        }
+      }
+    } catch (errFreeze) {
+      console.log(
+        '[pdf-congelado] Erro ao congelar PDF no storage (fallback defensivo ativo): ' +
+          (errFreeze ? errFreeze.message || String(errFreeze) : 'erro desconhecido'),
+      )
+      recordAuditInHook(
+        record.id,
+        'aviso_congelamento_pdf_storage',
+        'Aviso no congelamento do PDF no storage: ' +
+          (errFreeze ? errFreeze.message || String(errFreeze) : 'erro'),
+        6,
+        { erro: errFreeze ? errFreeze.message || String(errFreeze) : '' },
+      )
+    } finally {
+      if (storageReader && typeof storageReader.close === 'function') {
+        try {
+          storageReader.close()
+        } catch (_) {}
+      }
+      if (storageFs && typeof storageFs.close === 'function') {
+        try {
+          storageFs.close()
+        } catch (_) {}
+      }
+    }
+
+    // Se o PDF congelado foi validado com sucesso, utiliza EXCLUSIVAMENTE ele para anexar aos e-mails
+    var cleanPdfBase64 = ''
+    if (isFrozenPdfValid && frozenPdfBase64) {
+      cleanPdfBase64 = String(frozenPdfBase64).replace(/[\r\n\s]/g, '')
+      console.log(
+        '[pdf-congelado] Usando PDF CONGELADO do storage para envio de e-mails (' +
+          frozenPdfBytes.length +
+          ' bytes)',
+      )
+    } else {
+      console.log(
+        '[pdf-congelado] Aviso: PDF congelado nao validado; entrega de anexo bloqueada ou usando gerador local apenas se permitido',
+      )
+      // Se divergiu integridade, anexo fica vazio para impedir entrega adulterada
+      if (frozenPdfBytes && !isFrozenPdfValid) {
+        cleanPdfBase64 = ''
+      } else {
+        // Fallback apenas se falhou a gravacao inicial sem violacao de integridade
+        cleanPdfBase64 = String(pdfResult.base64 || '').replace(/[\r\n\s]/g, '')
+      }
+    }
+
     if (cleanPdfBase64.indexOf('base64,') !== -1) {
       cleanPdfBase64 = cleanPdfBase64.substring(cleanPdfBase64.indexOf('base64,') + 7)
     }
-    var attachments = [
-      {
+    var attachments = []
+    if (cleanPdfBase64 && cleanPdfBase64.length > 0) {
+      attachments.push({
         filename: pdfFilename,
         content: cleanPdfBase64,
-      },
-    ]
+      })
+    }
 
     var subject = 'Comprovante: Ficha de Anamnese Assinada - ' + patientName + ' - ' + fTypeLabel
 

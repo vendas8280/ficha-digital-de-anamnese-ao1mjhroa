@@ -246,7 +246,14 @@ export default function FormDetailPage() {
 
                 <Button
                   onClick={async () => {
-                    printFormPDF(form)
+                    const frozenUrl = formsService.getPdfUrl(form)
+                    if (frozenUrl) {
+                      // Abre o PDF congelado do storage para visualização / impressão oficial
+                      window.open(frozenUrl, '_blank', 'noopener,noreferrer')
+                    } else {
+                      // Fallback retrocompatível para fichas antigas sem pdf_file
+                      printFormPDF(form)
+                    }
                     try {
                       await formsService.recordPdfExportAudit(form.id, 'impressao')
                       const updatedEvents = await formsService.listAuditEvents(form.id)
@@ -609,7 +616,7 @@ export default function FormDetailPage() {
                   <div className="max-w-md break-all">
                     <span className="text-muted-foreground">Hash SHA-256 de Integridade:</span>{' '}
                     <code className="text-[11px] bg-white px-1.5 py-0.5 rounded border border-slate-300 font-mono">
-                      {form.document_hash || 'SHA256-REGISTRADO'}
+                      {form.stored_hash || form.document_hash || 'SHA256-REGISTRADO'}
                     </code>
                   </div>
                   <div className="text-[11px] text-muted-foreground">

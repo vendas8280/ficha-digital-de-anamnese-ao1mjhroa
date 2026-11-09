@@ -31,6 +31,7 @@ export interface FormSubmissionRecord {
   email_code_verified_at?: string
   pdf_attached_to_email?: boolean
   pdf_file?: string
+  stored_hash?: string
   created: string
   updated: string
 }
@@ -317,6 +318,22 @@ export const formsService = {
   // Delete form (clinic only)
   async deleteForm(id: string): Promise<boolean> {
     return await pb.collection('form_submissions').delete(id)
+  },
+
+  // Retorna a URL pública ou autenticada do PDF congelado no storage (PocketBase pb.files.getURL)
+  getPdfUrl(
+    record: Pick<FormSubmissionRecord, 'id' | 'pdf_file'> & Partial<FormSubmissionRecord>,
+  ): string {
+    if (!record.pdf_file) return ''
+    try {
+      // Passa o model com collectionId/collectionName ou nome da coleção
+      return pb.files.getURL(
+        record as unknown as Parameters<typeof pb.files.getURL>[0],
+        record.pdf_file,
+      )
+    } catch {
+      return ''
+    }
   },
 
   // Registra download ou impressão de PDF pela administradora
