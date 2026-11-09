@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T20:13:40.195Z",
+  "generatedAt": "2026-11-09T20:28:16.580Z",
   "collections": [
     {
       "name": "users",
@@ -29,14 +29,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
       "indexes": [
@@ -78,14 +83,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "sender_email",
@@ -128,7 +138,11 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["6", "12", "24"]
+          "selectValues": [
+            "6",
+            "12",
+            "24"
+          ]
         },
         {
           "name": "reminder_enable_24h",
@@ -203,14 +217,23 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["geral", "labios", "botox"]
+          "selectValues": [
+            "geral",
+            "labios",
+            "botox"
+          ]
         },
         {
           "name": "status",
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["pendente", "preenchida", "expirada", "codigo_validado"]
+          "selectValues": [
+            "pendente",
+            "preenchida",
+            "expirada",
+            "codigo_validado"
+          ]
         },
         {
           "name": "patient_name",
@@ -325,7 +348,11 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["nao_enviado", "enviado", "falha"]
+          "selectValues": [
+            "nao_enviado",
+            "enviado",
+            "falha"
+          ]
         },
         {
           "name": "email_delivery_error",
@@ -344,14 +371,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "email_code_verified_at",
@@ -449,14 +481,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "previous_hash",
@@ -528,14 +565,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
       "indexes": [
@@ -627,14 +669,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "reminder_state",
@@ -671,7 +718,10 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["24h", "2h"]
+          "selectValues": [
+            "24h",
+            "2h"
+          ]
         },
         {
           "name": "scheduled_for",
@@ -684,21 +734,32 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["programado", "enviado", "falha", "atrasado", "cancelado"]
+          "selectValues": [
+            "programado",
+            "enviado",
+            "falha",
+            "atrasado",
+            "cancelado"
+          ]
         },
         {
           "name": "created",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "attempts",
@@ -776,10 +837,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         }
       ],
-      "indexes": ["CREATE INDEX idx_auth_access_logs_user ON auth_access_logs (user, created)"]
+      "indexes": [
+        "CREATE INDEX idx_auth_access_logs_user ON auth_access_logs (user, created)"
+      ]
     },
     {
       "name": "login_attempts",
@@ -815,10 +880,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         }
       ],
-      "indexes": ["CREATE INDEX idx_login_attempts_email ON login_attempts (email, created)"]
+      "indexes": [
+        "CREATE INDEX idx_login_attempts_email ON login_attempts (email, created)"
+      ]
     },
     {
       "name": "password_resets",
@@ -861,10 +930,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         }
       ],
-      "indexes": ["CREATE UNIQUE INDEX idx_password_resets_token ON password_resets (token)"]
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_password_resets_token ON password_resets (token)"
+      ]
     }
   ]
 }
