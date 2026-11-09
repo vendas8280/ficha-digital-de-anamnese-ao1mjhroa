@@ -1902,7 +1902,17 @@ routerAdd('POST', '/backend/v1/forms/resend-email', (e) => {
           escPdfWinAnsi('• Profissional Responsável: ' + tResp) +
           ') Tj ET\n',
       )
-      var footerL2Left = cAddr + ' • Horário de Brasília (UTC-3)'
+      var formCode =
+        (rec.getString('form_code') || '').trim() ||
+        'AN-' +
+          (rec.getString('created') || '').substring(0, 4) +
+          '-' +
+          (rec.id || '0000')
+            .replace(/[^a-zA-Z0-9]/g, '')
+            .slice(-4)
+            .toUpperCase()
+      var footerL2Left =
+        'Código da Ficha: ' + formCode + ' • ' + cAddr + ' • Horário de Brasília (UTC-3)'
       streamParts.push(
         'BT /F1 8 Tf 0.40 0.45 0.52 rg ' +
           MARGIN_X +
@@ -5193,7 +5203,7 @@ onRecordAfterUpdateSuccess((e) => {
           'AN-' +
             (rec.getString('created') || '').substring(0, 4) +
             '-' +
-            (rec.getId() || '0000')
+            (rec.id || '0000')
               .replace(/[^a-zA-Z0-9]/g, '')
               .slice(-4)
               .toUpperCase()
