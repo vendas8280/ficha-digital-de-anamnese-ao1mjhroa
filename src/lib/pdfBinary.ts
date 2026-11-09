@@ -413,19 +413,33 @@ export function generateFormPdfBytes(
   curY -= boxHeight + 32
 
   // SEÇÃO 5
-  drawSectionTitle('SEÇÃO 5 — REGISTRO DE AUDITORIA & INTEGRIDADE')
-  const auditRows = [
-    { label: 'Data e Hora do Aceite:', value: signedAt },
-    { label: 'IP de Origem Real:', value: ipOrigem },
-    { label: 'Dispositivo / Navegador:', value: userAgent },
-    { label: 'Hash SHA-256 de Integridade:', value: docHash },
-    {
-      label: 'Certificação de Autenticidade:',
-      value:
-        'Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.',
-    },
-  ]
-  drawTwoColumnTable(auditRows, 175, CONTENT_WIDTH - 175)
+  drawSectionTitle('SEÇÃO 5 — REGISTRO DA ASSINATURA ELETRÔNICA')
+  let signedAtDisplay = signedAt
+  if (
+    signedAtDisplay.indexOf('(horário de Brasília)') === -1 &&
+    signedAtDisplay.indexOf('(Horário de Brasília)') === -1
+  ) {
+    signedAtDisplay = `${signedAtDisplay} (horário de Brasília)`
+  }
+  const sec5Text = `Aceite registrado em ${signedAtDisplay}. Assinatura eletrônica realizada com confirmação por código enviado ao e-mail informado. O registro técnico completo — data, hora, origem e integridade do documento — está arquivado na clínica e pode ser solicitado a qualquer momento.`
+  const sec5Lines = wrapText(sec5Text, CONTENT_WIDTH - 24, 9.5)
+  const boxPad = 12
+  const lineH = 14
+  const sec5BoxH = sec5Lines.length * lineH + boxPad * 2
+  ensureSpace(sec5BoxH + 10)
+
+  curPage.commands.push(
+    `q 0.985 0.985 0.99 rg 0.85 0.88 0.92 RG 0.8 w ${MARGIN_X} ${curY - sec5BoxH} ${CONTENT_WIDTH} ${sec5BoxH} re B Q`,
+  )
+
+  let textY = curY - boxPad - 8
+  for (let s5 = 0; s5 < sec5Lines.length; s5++) {
+    curPage.commands.push(
+      `BT /F1 9.5 Tf 0.25 0.28 0.35 rg ${MARGIN_X + 12} ${textY} Td (${escPdfWinAnsi(sec5Lines[s5])}) Tj ET`,
+    )
+    textY -= lineH
+  }
+  curY -= sec5BoxH + 12
 
   pages.push(curPage)
   const totalPages = pages.length

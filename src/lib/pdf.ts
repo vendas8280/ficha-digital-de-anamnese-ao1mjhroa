@@ -197,14 +197,12 @@ ${form.accepted_term_text || 'Termo aceito pelo paciente no momento da assinatur
 
       <div class="audit-footer">
         <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-          <div>
-            <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">CERTIFICADO DE ASSINATURA ELETRÔNICA</div>
-            <div><strong>Data e Hora:</strong> ${formatDateBR(form.signed_at || form.created)} (Horário de Brasília)</div>
-            <div><strong>IP de Origem Real:</strong> ${form.ip_address || 'Registrado via Cloud'}</div>
-            <div style="word-break: break-all; margin-top: 4px;"><strong>Hash SHA-256 de Integridade:</strong> <br/><code style="font-family: monospace; font-size: 11px;">${form.document_hash || 'SHA256-REGISTRADO'}</code></div>
-            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Código de verificação de integridade — garante que este documento não foi alterado após a assinatura.</div>
-            <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Dispositivo: ${form.user_agent || 'Navegador Mobile/Web'}</div>
-            <div style="font-size: 11px; color: #065f46; margin-top: 6px; font-weight: 600;">Esta é a sua via do documento assinado. Guarde para seus registros.</div>
+          <div style="max-width: 58%;">
+            <div style="font-weight: 700; color: #0f172a; margin-bottom: 6px; font-size: 12px;">SEÇÃO 5 — REGISTRO DA ASSINATURA ELETRÔNICA</div>
+            <div style="font-size: 12px; color: #334155; line-height: 1.5;">
+              Aceite registrado em ${formatDateBR(form.signed_at || form.created)} (horário de Brasília). Assinatura eletrônica realizada com confirmação por código enviado ao e-mail informado. O registro técnico completo — data, hora, origem e integridade do documento — está arquivado na clínica e pode ser solicitado a qualquer momento.
+            </div>
+            <div style="font-size: 11px; color: #065f46; margin-top: 8px; font-weight: 600;">Esta é a sua via do documento assinado. Guarde para seus registros.</div>
           </div>
           <div style="text-align: center; min-width: 240px;">
             ${
