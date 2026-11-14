@@ -21,6 +21,7 @@ import {
 import { Copy, Check, MessageCircle, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { formsService, appointmentsService } from '@/services/forms'
+import { FORM_TYPE_LABELS } from '@/types/form'
 import type { FormType } from '@/types/form'
 import { buildWhatsAppLinkUrl } from './dashboardHelpers'
 
@@ -175,15 +176,11 @@ export const GenerateLinkDialog: React.FC<GenerateLinkDialogProps> = ({
                   <SelectValue placeholder="Selecione o procedimento" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="geral" className="text-xs">
-                    Anamnese Geral (Faciais e Corporais)
-                  </SelectItem>
-                  <SelectItem value="labios" className="text-xs">
-                    Lábios & Micropigmentação Labial
-                  </SelectItem>
-                  <SelectItem value="botox" className="text-xs">
-                    Toxina Botulínica (Botox)
-                  </SelectItem>
+                  {(Object.keys(FORM_TYPE_LABELS) as FormType[]).map((t) => (
+                    <SelectItem key={t} value={t} className="text-xs">
+                      {FORM_TYPE_LABELS[t]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

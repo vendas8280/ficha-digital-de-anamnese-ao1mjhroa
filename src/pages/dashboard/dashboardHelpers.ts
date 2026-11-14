@@ -1,4 +1,5 @@
 import type { FormSubmissionRecord, ProcedureAppointmentRecord } from '@/services/forms'
+import { FORM_TYPE_LABELS } from '@/types/form'
 
 export type PatientCardCategory = 'com_pendencia' | 'fichas_prontas' | 'aguardando_paciente'
 
@@ -58,11 +59,9 @@ export function classifyFormCategory(
   return 'aguardando_paciente'
 }
 
-export const TYPE_LABEL_MAP: Record<string, string> = {
-  geral: 'Anamnese Geral',
-  labios: 'Lábios & Micropigmentação',
-  botox: 'Toxina Botulínica (Botox)',
-}
+// Rótulos do painel derivados do mapa canônico — mesma nomenclatura da
+// geração de link e da ficha do paciente.
+export const TYPE_LABEL_MAP: Record<string, string> = { ...FORM_TYPE_LABELS }
 
 /**
  * Normaliza número de telefone para apenas dígitos.

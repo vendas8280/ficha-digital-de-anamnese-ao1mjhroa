@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { formsService, computeHash } from '@/services/forms'
 import type { FormSubmissionRecord } from '@/services/forms'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
-import { TERMS_DATA } from '@/types/form'
+import { TERMS_DATA, getFormTypeLabel } from '@/types/form'
 import { formatCPF, validateCPF, formatPhone } from '@/lib/formatters'
 import { SignatureCanvas } from '@/components/SignatureCanvas'
 import { Button } from '@/components/ui/button'
@@ -556,7 +556,8 @@ export default function PatientFormPage() {
               Andresa Souza Clinic
             </h1>
             <p className="text-[11px] text-rose-700 font-medium">
-              Ficha Digital &bull; {activeTerm?.subtitle.split('•')[1] || 'Anamnese Segura'}
+              Ficha Digital &bull;{' '}
+              {formRecord ? getFormTypeLabel(formRecord.form_type) : 'Anamnese Segura'}
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full text-xs border border-emerald-200 font-medium">
@@ -1146,7 +1147,7 @@ export default function PatientFormPage() {
                 <span>Etapa 4 de 6</span> &bull; <span>Detalhes Específicos</span>
               </div>
               <CardTitle className="text-lg text-rose-950 font-bold">
-                Sobre o Procedimento: {formRecord?.form_type.toUpperCase()}
+                Sobre o Procedimento: {formRecord ? getFormTypeLabel(formRecord.form_type) : ''}
               </CardTitle>
               <CardDescription className="text-xs">
                 Responda com sinceridade para o melhor alinhamento técnico.

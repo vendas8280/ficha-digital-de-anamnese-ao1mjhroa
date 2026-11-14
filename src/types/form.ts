@@ -9,6 +9,22 @@ export interface TermDefinition {
   content: string
 }
 
+// Rótulo canônico de cada tipo de ficha — deve corresponder EXATAMENTE à opção
+// exibida na geração de link (GenerateLinkDialog) e ser usado em toda a ficha
+// do paciente (cabeçalho, boas-vindas, etapa de procedimento).
+export const FORM_TYPE_LABELS: Record<FormType, string> = {
+  geral: 'Anamnese Geral (Faciais e Corporais)',
+  labios: 'Lábios & Micropigmentação Labial',
+  botox: 'Toxina Botulínica (Botox)',
+}
+
+export function getFormTypeLabel(type: FormType | string | undefined): string {
+  if (type && type in FORM_TYPE_LABELS) {
+    return FORM_TYPE_LABELS[type as FormType]
+  }
+  return 'Anamnese Geral (Faciais e Corporais)'
+}
+
 export const TERMS_DATA: Record<FormType, TermDefinition> = {
   geral: {
     type: 'geral',

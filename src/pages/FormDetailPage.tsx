@@ -5,6 +5,7 @@ import { formsService } from '@/services/forms'
 import type { FormSubmissionRecord, AuditEventRecord } from '@/services/forms'
 import { printFormPDF } from '@/lib/pdf'
 import { formatDateBR } from '@/lib/formatters'
+import { getFormTypeLabel } from '@/types/form'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -168,9 +169,9 @@ export default function FormDetailPage() {
   }
 
   const typeLabelMap: Record<string, string> = {
-    geral: 'Anamnese Geral',
-    labios: 'Lábios & Micropigmentação Labial',
-    botox: 'Toxina Botulínica (Botox)',
+    geral: getFormTypeLabel('geral'),
+    labios: getFormTypeLabel('labios'),
+    botox: getFormTypeLabel('botox'),
   }
 
   return (
